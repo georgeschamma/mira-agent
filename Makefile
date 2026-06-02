@@ -1,4 +1,4 @@
-.PHONY: setup dev health test test-rls lint build docker db-start db-reset db-stop
+.PHONY: setup dev health test test-rls lint validate build docker db-start db-reset db-stop
 
 setup:
 	test -f .env || cp .env.example .env
@@ -29,6 +29,11 @@ test-rls:
 lint:
 	uv run python -m compileall src tests scripts
 	uv run ruff check .
+
+validate:
+	uv run python -m compileall src tests scripts
+	uv run ruff check .
+	uv run pytest tests/unit tests/api
 
 build:
 	cd ui && npm install && npm run build

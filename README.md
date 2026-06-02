@@ -27,14 +27,21 @@ EXA_NUM_RESULTS=5
 ## Validate
 
 ```bash
-curl -s http://localhost:8123/health
-curl -s http://localhost:8123/health/db
-uv run pytest tests/unit tests/api
-make test
-make test-rls
+make validate
 ```
 
-Both health endpoints should return:
+`make validate` runs compile checks, Ruff, and the unit/API test suite. For local Supabase and end-to-end checks, run:
+
+```bash
+supabase start
+supabase db reset
+uv run python scripts/create_demo_users.py
+make test-rls
+make dev
+make health
+```
+
+`make dev` starts `mira_agent.main:app` on port `8123`. Both health endpoints should return:
 
 ```json
 {"status":"healthy"}

@@ -34,6 +34,7 @@ supabase db reset
 uv run python scripts/create_demo_users.py
 make dev
 make health
+make validate
 make test
 make test-rls
 make lint
@@ -83,4 +84,5 @@ src/mira_agent/
 - `/health` and `/health/db` are the canonical health endpoints.
 - `/api/analyze` must preserve route-level org role checks before graph execution.
 - Every recommendation must have a concrete URL or `brief:*` source.
+- `make validate` is the canonical no-Supabase local validation target.
 - Update `app_structure_llm.txt` when routes, folders, infrastructure, or data flow change.

@@ -1,0 +1,49 @@
+MIRA Agent - Phase 1 app structure
+
+Purpose:
+- Preserve FastAPI app spine, Supabase Auth, organization membership, and user-JWT-bound RLS.
+- Run the first real analysis workflow without CRM, GA4, full UI, Azure deploy, benchmarks, or eval suites.
+
+Routes:
+- GET /health -> app health
+- GET /health/db -> Supabase/PostgREST connectivity through anon key
+- POST /api/analyze -> authenticated analysis run with Exa research, PydanticAI content output, audit rows, action sheet, and pending approvals
+- POST /api/action-sheets/{action_sheet_id}/approvals/{recommendation_id} -> Admin approval update
+
+Analysis flow:
+- routers/analyze.py verifies the Supabase user and org role before graph execution.
+- graph/graph.py compiles the sequential LangGraph: START -> router -> research -> content -> END.
+- graph/nodes/router.py creates campaign and campaign_run rows, then writes audit step 0.
+- graph/nodes/research.py calls integrations/exa.py for highlighted Exa results, then writes audit step 1.
+- graph/nodes/content.py calls PydanticAI with structured output, validates sources, persists the action sheet and pending approvals, then writes audit step 2.
+
+Runtime data boundary:
+- FastAPI verifies Supabase Bearer JWT through Supabase Auth.
+- Repositories use RlsClient with apikey=SUPABASE_ANON_KEY and Authorization=Bearer user_jwt.
+- Service-role key is restricted to migrations, scripts/create_demo_users.py, and test setup.
+- LLM_API_KEY and EXA_API_KEY are runtime-only settings and must not be logged or committed.
+
+Important folders:
+- src/mira_agent/routers: FastAPI route modules.
+- src/mira_agent/graph: LangGraph state, context, graph builder, and nodes.
+- src/mira_agent/integrations: Exa and LLM provider wrappers.
+- src/mira_agent/repositories: Supabase/PostgREST table operations.
+- src/mira_agent/schemas: Pydantic request/response models.
+- supabase/migrations: SQL schema and RLS policies.
+- scripts: repeatable local demo user/org setup.
+- tests/unit: fake-client graph, content, and Exa tests.
+- tests/api: cheap API/auth/health tests.
+- tests/integration: real-JWT Supabase RLS tests.
+- ui: minimal Vite placeholder shell.
+
+Validation:
+- uv sync
+- supabase start
+- supabase db reset
+- uv run python scripts/create_demo_users.py
+- uv run python -m compileall src tests scripts
+- uv run ruff check .
+- uv run pytest tests/unit tests/api
+- RUN_RLS_TESTS=1 uv run pytest tests/integration/test_rls_real_jwt.py
+- make build
+- make docker

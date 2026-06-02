@@ -1,0 +1,15 @@
+.env
+.demo.env
+.venv/
+__pycache__/
+.pytest_cache/
+.ruff_cache/
+dist/
+build/
+node_modules/
+ui/node_modules/
+ui/dist/
+ui/tsconfig.tsbuildinfo
+supabase/.branches/
+supabase/.temp/
+*.pyc

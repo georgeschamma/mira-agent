@@ -18,7 +18,7 @@ def _require_rls_tests_enabled() -> None:
 def _require_phase_1_integrations_configured() -> None:
     settings = get_settings()
     if not settings.has_llm_config or not settings.has_exa_config:
-        pytest.skip("Set LLM and Exa env keys to run the Phase 1 real analysis flow.")
+        pytest.skip("Set LLM and Exa env keys to run the real analysis flow.")
 
 
 def test_real_jwt_org_rbac_and_rls_flow() -> None:
@@ -50,6 +50,38 @@ def test_real_jwt_org_rbac_and_rls_flow() -> None:
         item for item in body["recommendations"] if item["needs_approval"]
     )
     assert body["approval_id"]
+
+    report_response = client.get(
+        f"/api/action-sheets/{body['action_sheet_id']}",
+        headers={"Authorization": f"Bearer {state.analyst_jwt}"},
+    )
+    assert report_response.status_code == 200, report_response.text
+    report_body = report_response.json()
+    assert report_body["action_sheet_id"] == body["action_sheet_id"]
+    assert report_body["recommendations"]
+    assert all(item["source"] for item in report_body["recommendations"])
+
+    audit_response = client.get(
+        f"/api/runs/{body['run_id']}/audit",
+        headers={"Authorization": f"Bearer {state.analyst_jwt}"},
+    )
+    assert audit_response.status_code == 200, audit_response.text
+    audit_body = audit_response.json()
+    assert [row["node"] for row in audit_body["rows"]] == ["router", "research", "content"]
+
+    outsider_report_response = client.get(
+        f"/api/action-sheets/{body['action_sheet_id']}",
+        headers={"Authorization": f"Bearer {state.outsider_jwt}"},
+    )
+    assert outsider_report_response.status_code == 404
+    assert outsider_report_response.json()["error"]["code"] == "ACTION_SHEET_NOT_FOUND"
+
+    outsider_audit_response = client.get(
+        f"/api/runs/{body['run_id']}/audit",
+        headers={"Authorization": f"Bearer {state.outsider_jwt}"},
+    )
+    assert outsider_audit_response.status_code == 404
+    assert outsider_audit_response.json()["error"]["code"] == "AUDIT_TRACE_NOT_FOUND"
 
     analyst_approval_response = client.post(
         f"/api/action-sheets/{body['action_sheet_id']}/approvals/{approval_recommendation['id']}",

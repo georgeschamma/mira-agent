@@ -1,4 +1,4 @@
-.PHONY: setup dev health test test-rls lint validate build docker db-start db-reset db-stop
+.PHONY: setup dev health test test-rls lint validate ui-build build docker db-start db-reset db-stop
 
 setup:
 	test -f .env || cp .env.example .env
@@ -35,9 +35,12 @@ validate:
 	uv run ruff check .
 	uv run pytest tests/unit tests/api
 
+ui-build:
+	cd ui && npm run build
+
 build:
 	cd ui && npm install && npm run build
 	uv build
 
 docker:
-	docker build -t mira-agent:phase-1 .
+	docker build -t mira-agent:phase-2 .

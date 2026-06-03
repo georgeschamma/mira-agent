@@ -42,12 +42,15 @@ class RlsClient:
         select: str = "*",
         filters: Mapping[str, str] | None = None,
         limit: int | None = None,
+        order: str | None = None,
     ) -> list[dict[str, Any]]:
         params: dict[str, str | int] = {"select": select}
         if filters:
             params.update(filters)
         if limit is not None:
             params["limit"] = limit
+        if order is not None:
+            params["order"] = order
         return await self._request("GET", table, params=params)
 
     async def insert(self, table: str, payload: Mapping[str, Any]) -> list[dict[str, Any]]:
@@ -114,4 +117,3 @@ class RlsClient:
         if isinstance(data, list):
             return data
         return [data]
-

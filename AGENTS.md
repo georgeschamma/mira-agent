@@ -34,9 +34,11 @@ Project-local rules for the generated MIRA app. These rules apply inside `mira-a
 - Do not add eval suites, benchmarks, payments, public signup, Redis, Airflow, OpenSearch,
   vector RAG, or CRM writeback in this phase.
 - Use one service: FastAPI serves API routes and the React/Vite static bundle.
-- Runtime database reads/writes must use the user's Supabase JWT with the anon key. Never use
-  the service-role key on request paths.
-- Service-role use is allowed only for migrations, seed/demo user scripts, and test setup.
+- Runtime database reads and tenant/role authorization must use the user's Supabase JWT with the
+  anon key so RLS applies.
+- Generated campaign, run, action-sheet, approval, and audit writes must use the backend-only
+  service-role client after route-level user-JWT authorization. Never expose the service-role key
+  through `/api/config`, browser code, logs, or user-controlled requests.
 
 ## Stack
 
@@ -130,6 +132,9 @@ src/mira_agent/
   capped at 2 MB each, parsed in memory, and raw contents must not be persisted.
 - Report and audit reads must use user-JWT-bound `RlsClient`; RLS-hidden rows should not leak
   cross-org existence.
+- Authenticated browser roles must not have direct insert/update/delete privileges on generated
+  campaign, run, action-sheet, approval, or audit tables.
+- RLS security-definer helper functions must live in a non-exposed schema.
 - Admin approval must use the existing approval endpoint. Do not add a duplicate approval path.
 - Every recommendation must have a concrete URL or `brief:*` source.
 - Phase 3 document claims must use concrete `https://...`, `brief:*`, `crm:segment:*`,
@@ -137,4 +142,6 @@ src/mira_agent/
 - Markdown export is client-side only in Phase 2.
 - `make validate` is the canonical no-Supabase local validation target.
 - Azure docs must use placeholders and `secretref:` for secrets.
+- GitHub Actions Azure authentication must use OIDC with least-privilege Azure roles. Do not add
+  registry passwords or Azure client secrets to repository configuration.
 - Update `app_structure_llm.txt` when routes, folders, infrastructure, or data flow change.

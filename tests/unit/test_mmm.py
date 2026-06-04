@@ -121,6 +121,16 @@ def test_allocation_respects_floor_and_cap():
         assert by[ch].recommended_spend <= current[ch] * 2.0 + 1.0
 
 
+def test_allocation_reports_budget_blocked_by_caps():
+    curves = [_hill_curve("tv", 1000, 150, 1.0), _hill_curve("search", 1000, 80, 1.0)]
+    current = {"tv": 100.0, "search": 100.0}
+
+    plan = optimize_allocation(curves, current, total_budget=1000.0)
+
+    assert sum(item.recommended_spend for item in plan.allocations) == 400.0
+    assert plan.unallocated_budget == 600.0
+
+
 def test_allocation_favors_less_saturated_channel():
     # search has a far higher ceiling -> steeper marginal returns -> should win budget.
     curves = [_hill_curve("tv", 1000, 150, 1.0), _hill_curve("search", 8000, 150, 1.0)]

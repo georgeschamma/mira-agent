@@ -44,6 +44,13 @@ class Settings(BaseSettings):
         )
 
     @property
+    def has_supabase_write_config(self) -> bool:
+        return bool(
+            self.supabase_service_role_key
+            and not self.supabase_service_role_key.startswith("replace-with")
+        )
+
+    @property
     def has_llm_config(self) -> bool:
         return bool(self.llm_model and self.llm_api_key)
 

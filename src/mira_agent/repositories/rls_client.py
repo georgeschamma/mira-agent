@@ -91,6 +91,9 @@ class RlsClient:
             headers={"Prefer": "return=representation"},
         )
 
+    async def rpc(self, function: str, payload: Mapping[str, Any]) -> list[dict[str, Any]]:
+        return await self._request("POST", f"rpc/{function}", json=payload)
+
     async def _request(
         self,
         method: str,

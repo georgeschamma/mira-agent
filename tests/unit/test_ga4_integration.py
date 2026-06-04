@@ -51,6 +51,22 @@ def test_parse_ga4_invalid_rows_create_warnings() -> None:
     assert result.observations[0].spend == [120.0]
 
 
+def test_parse_ga4_non_finite_rows_create_warnings() -> None:
+    csv_text = "\n".join(
+        [
+            "date,source,medium,channel,cost,conversions,total_revenue",
+            "2026-05-01,google,cpc,Paid Search,NaN,4,400",
+            "2026-05-02,google,cpc,Paid Search,120,Infinity,500",
+            "2026-05-03,google,cpc,Paid Search,130,5,500",
+        ]
+    )
+
+    result = parse_ga4_csv(csv_text)
+
+    assert len(result.warnings) == 2
+    assert result.current_spend["Paid Search | google/cpc"] == 130.0
+
+
 def test_parse_ga4_sparse_channel_marked_insufficient() -> None:
     csv_text = "\n".join(
         [

@@ -6,7 +6,7 @@ from pydantic import BaseModel, Field
 from pydantic_ai import Agent
 
 from mira_agent.graph.context import MiraContext
-from mira_agent.graph.state import MiraMediaPlanState
+from mira_agent.graph.state import MiraMediaPlanState, NodeError
 from mira_agent.repositories.campaigns import finish_campaign_run, write_audit_row
 from mira_agent.repositories.media_plans import save_media_plan_document
 from mira_agent.schemas.media_plan import MediaPlanGraphRequest, SourceClaim
@@ -21,7 +21,7 @@ class StrategyNarrativeOutput(BaseModel):
     channel_rationale: str
     sequencing: str
     risks: str
-    claims: list[SourceClaim] = Field(default_factory=list)
+    claims: list[SourceClaim] = Field(min_length=1)
 
 
 async def strategy_node(state: MiraMediaPlanState, context: MiraContext) -> MiraMediaPlanState:
@@ -33,6 +33,8 @@ async def strategy_node(state: MiraMediaPlanState, context: MiraContext) -> Mira
     table = render_budget_table(state.get("allocations", []))
     narrative = await generate_strategy_narrative(state=state, context=context, budget_table=table)
     validate_source_claims(narrative.claims)
+    fallback_used = _strategy_fallback_used(state)
+    model_used = "deterministic-fallback" if fallback_used else context.settings.llm_model or "none"
     document = render_media_plan_document(
         state=state,
         request=request,
@@ -62,7 +64,7 @@ async def strategy_node(state: MiraMediaPlanState, context: MiraContext) -> Mira
         run_id=run_id,
         document_markdown=document,
         document_metadata=metadata,
-        model_used=context.settings.llm_model or "none",
+        model_used=model_used,
         processing_ms=processing_ms,
     )
     await write_audit_row(
@@ -71,10 +73,14 @@ async def strategy_node(state: MiraMediaPlanState, context: MiraContext) -> Mira
         run_id=run_id,
         step_index=4,
         node="strategy",
-        summary="Created sourced media-plan document with deterministic budget table.",
+        summary=(
+            "Created sourced fallback media-plan document with deterministic budget table."
+            if fallback_used
+            else "Created sourced media-plan document with deterministic budget table."
+        ),
         source="performance:allocation",
-        confidence="medium" if state.get("errors") else "high",
-        model_used=context.settings.llm_model or "none",
+        confidence="low" if fallback_used else "medium" if state.get("errors") else "high",
+        model_used=model_used,
     )
     await finish_campaign_run(
         client=context.client,
@@ -113,7 +119,27 @@ async def generate_strategy_narrative(
         validate_source_claims(output.claims)
         return output
     except Exception:
+        _record_strategy_fallback(state)
         return fallback_narrative(state)
+
+
+def _record_strategy_fallback(state: MiraMediaPlanState) -> None:
+    errors = list(state.get("errors", []))
+    errors.append(
+        NodeError(
+            node="strategy",
+            code="LLM_STRUCTURED_OUTPUT_UNAVAILABLE",
+            message="Structured LLM output was unavailable; used sourced fallback narrative.",
+        )
+    )
+    state["errors"] = errors
+
+
+def _strategy_fallback_used(state: MiraMediaPlanState) -> bool:
+    return any(
+        error.node == "strategy" and error.code == "LLM_STRUCTURED_OUTPUT_UNAVAILABLE"
+        for error in state.get("errors", [])
+    )
 
 
 def fallback_narrative(state: MiraMediaPlanState) -> StrategyNarrativeOutput:

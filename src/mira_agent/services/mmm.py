@@ -65,6 +65,7 @@ class AllocationPlan:
     total_budget: float
     baseline_total_response: float
     projected_total_response: float
+    unallocated_budget: float = 0.0
 
 
 # ---------------------------------------------------------------------------
@@ -252,7 +253,7 @@ def optimize_allocation(
     """
     total_budget = max(total_budget, 0.0)
     if not curves:
-        return AllocationPlan([], total_budget, 0.0, 0.0)
+        return AllocationPlan([], total_budget, 0.0, 0.0, unallocated_budget=total_budget)
 
     def value_of(channel: str) -> float:
         if isinstance(value_per_response, dict):
@@ -325,6 +326,7 @@ def optimize_allocation(
         total_budget=total_budget,
         baseline_total_response=baseline_total,
         projected_total_response=projected_total,
+        unallocated_budget=max(remaining, 0.0),
     )
 
 
@@ -370,4 +372,5 @@ def allocation_plan_to_dict(plan: AllocationPlan) -> dict[str, object]:
         "total_budget": finite_or_none(plan.total_budget),
         "baseline_total_response": finite_or_none(plan.baseline_total_response),
         "projected_total_response": finite_or_none(plan.projected_total_response),
+        "unallocated_budget": finite_or_none(plan.unallocated_budget),
     }

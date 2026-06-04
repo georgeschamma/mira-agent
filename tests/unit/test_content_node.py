@@ -1,6 +1,7 @@
 import pytest
 from pydantic_ai.models.test import TestModel
 
+import mira_agent.graph.nodes.content as content_module
 from mira_agent.config import Settings
 from mira_agent.exceptions import ApiError
 from mira_agent.graph.context import MiraContext
@@ -60,7 +61,7 @@ async def test_generate_recommendations_normalizes_source_and_high_approval() ->
                     "needs_approval": False,
                 },
                 {
-                    "id": "rec_goal",
+                    "id": "rec/high impact",
                     "domain": "research",
                     "finding": "Tie the CTA to demo bookings.",
                     "source": "brief:goal",
@@ -103,4 +104,49 @@ async def test_generate_recommendations_normalizes_source_and_high_approval() ->
     assert recommendations[0].id == "rec_1"
     assert recommendations[0].source == "https://example.com/benchmarks"
     assert recommendations[0].needs_approval is True
+    assert recommendations[1].id == "rec_high_impact"
     assert recommendations[1].needs_approval is False
+
+
+@pytest.mark.asyncio
+async def test_generate_recommendations_falls_back_when_structured_llm_fails(monkeypatch) -> None:
+    class RaisingAgent:
+        def __init__(self, *args, **kwargs) -> None:
+            pass
+
+        async def run(self, prompt: str) -> object:
+            raise RuntimeError("invalid provider response")
+
+    monkeypatch.setattr(content_module, "Agent", RaisingAgent)
+    context = MiraContext(
+        client=DummyRlsClient(),  # type: ignore[arg-type]
+        user=CurrentUser(id="user_1", token="jwt"),
+        settings=Settings(llm_model="test-model", llm_api_key="test", exa_api_key="test"),
+        research_client=DummyResearchClient(),
+        model=object(),
+    )
+    state = {
+        "request": {
+            "org_id": "11111111-1111-4111-8111-111111111111",
+            "product": "MIRA",
+            "audience": "B2B marketers",
+            "channels": ["linkedin"],
+            "budget": 1000,
+            "goal": "book demos",
+        },
+        "user_id": "user_1",
+        "findings": [
+            ResearchFinding(
+                title="B2B benchmark report",
+                url="https://example.com/benchmarks",
+                highlights=["Benchmarks help marketers prioritize channels."],
+            )
+        ],
+    }
+
+    recommendations = await generate_recommendations(state, context)
+
+    assert recommendations[0].source == "https://example.com/benchmarks"
+    assert recommendations[0].needs_approval is True
+    assert recommendations[1].source == "brief:audience"
+    assert state["errors"][0].code == "LLM_STRUCTURED_OUTPUT_UNAVAILABLE"

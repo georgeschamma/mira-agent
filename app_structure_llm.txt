@@ -1,47 +1,115 @@
-MIRA Agent - Phase 1 app structure
+MIRA Agent - Phase 3 media-plan app structure with Phase 2 baseline retained
 
 Purpose:
 - Preserve FastAPI app spine, Supabase Auth, organization membership, and user-JWT-bound RLS.
-- Run the first real analysis workflow without CRM, GA4, full UI, Azure deploy, benchmarks, or eval suites.
+- Run the thin analysis workflow and expose a browser product slice for report, audit,
+  approval, and Markdown export.
+- Phase 2 runtime remains available at /api/analyze: router -> research -> content.
+- Phase 3 runtime is available at /api/media-plan:
+  free-text brief + CRM CSV + GA4 CSV -> brief -> parallel research/audience/performance ->
+  strategy document.
+- Keep eval suites, benchmarks, payments, public signup, vector RAG, Redis, OpenSearch, and
+  CRM writeback out of scope unless explicitly approved in a later plan.
 
 Routes:
 - GET /health -> app health
 - GET /health/db -> Supabase/PostgREST connectivity through anon key
-- POST /api/analyze -> authenticated analysis run with Exa research, PydanticAI content output, audit rows, action sheet, and pending approvals
+- GET /api/config -> browser-safe runtime config: app metadata, Supabase URL, anon key
+- POST /api/media-plan -> authenticated multipart media-plan run with org_id, brief, crm_csv,
+  ga4_csv, deterministic budget allocation, document persistence, audit rows, and document approval;
+  CRM and GA4 CSV uploads are capped at 2 MB each before decoding
+- POST /api/analyze -> authenticated analysis run with Exa research, PydanticAI content output,
+  audit rows, action sheet, and pending approvals
+- GET /api/action-sheets/{action_sheet_id} -> authenticated saved report read through RLS
+- GET /api/runs/{run_id}/audit -> authenticated audit trace read through RLS ordered by
+  step_index and created_at
 - POST /api/action-sheets/{action_sheet_id}/approvals/{recommendation_id} -> Admin approval update
 
 Analysis flow:
 - routers/analyze.py verifies the Supabase user and org role before graph execution.
 - graph/graph.py compiles the sequential LangGraph: START -> router -> research -> content -> END.
 - graph/nodes/router.py creates campaign and campaign_run rows, then writes audit step 0.
-- graph/nodes/research.py calls integrations/exa.py for highlighted Exa results, then writes audit step 1.
-- graph/nodes/content.py calls PydanticAI with structured output, validates sources, persists the action sheet and pending approvals, then writes audit step 2.
+- graph/nodes/research.py calls integrations/exa.py for highlighted Exa results, then writes
+  audit step 1.
+- graph/nodes/content.py calls PydanticAI with structured output, validates sources, persists
+  the action sheet and pending approvals, then writes audit step 2.
+
+Phase 3 media-plan flow:
+- routers/media_plan.py verifies Supabase user and org role before bounded CSV upload reads, then
+  builds a request-scoped MediaPlanGraphRequest.
+- graph/graph.py compiles the media-plan LangGraph:
+  START -> brief -> research/audience/performance in parallel -> strategy -> END.
+- graph/state.py defines MiraMediaPlanState with reducer-backed parallel list fields.
+- graph/nodes/brief.py parses free-text brief, creates campaign/campaign_run rows, and writes
+  audit step 0.
+- graph/nodes/research.py is reused for Exa market signals and writes audit step 1.
+- graph/nodes/audience.py parses CRM CSV in memory, outputs aggregate segments only, marks
+  pii_accessed=true, and writes audit step 2.
+- graph/nodes/performance.py parses GA4 CSV, calls services/mmm.py for deterministic allocation,
+  and writes audit step 3.
+- graph/nodes/strategy.py renders the deterministic budget table in code, uses PydanticAI only
+  for sourced narrative, saves action_sheets.document_markdown/document_metadata/document_status,
+  creates recommendation_id=document approval, and writes audit step 4.
+
+Report/audit flow:
+- routers/reports.py requires a Supabase user and delegates to repositories/reports.py.
+- repositories/reports.py reads action_sheets, joined campaign brief/org metadata, approval rows,
+  and audit_log rows using the request user's JWT through RlsClient.
+- schemas/report.py defines runtime config, report, approval state, and audit trace response
+  models, including optional Phase 3 document fields.
+- schemas/media_plan.py defines media-plan response, file metadata, segment, channel, allocation,
+  and graph request contracts.
+- RLS-hidden or missing action sheet/audit rows return stable 404 API errors.
 
 Runtime data boundary:
 - FastAPI verifies Supabase Bearer JWT through Supabase Auth.
 - Repositories use RlsClient with apikey=SUPABASE_ANON_KEY and Authorization=Bearer user_jwt.
 - Service-role key is restricted to migrations, scripts/create_demo_users.py, and test setup.
 - LLM_API_KEY and EXA_API_KEY are runtime-only settings and must not be logged or committed.
+- /api/config must never expose service-role, LLM, Exa, or demo JWT values.
+- scripts/create_demo_users.py writes ignored .demo.env with DEMO_PASSWORD and fresh demo JWTs;
+  browser bundles must not hard-code demo passwords.
+
+Browser UI flow:
+- ui/src/main.tsx loads /api/config, creates the Supabase browser client, manages auth state,
+  submits media-plan brief + CRM/GA4 CSV uploads, renders document/report and audit tabs, updates
+  document approval, and triggers export.
+- ui/src/api.ts wraps FastAPI fetch calls with explicit Bearer tokens.
+- ui/src/supabase.ts creates a singleton Supabase client from runtime config.
+- ui/src/types.ts mirrors backend Pydantic API contracts.
+- ui/src/reportMarkdown.ts builds client-side Markdown exports from report and audit responses.
+  Phase 3 exports the saved document_markdown with audit appended.
+- ui/src/styles.css contains compact product UI styles for forms, rows, tabs, badges, and mobile
+  stacking.
 
 Important folders:
 - src/mira_agent/routers: FastAPI route modules.
 - src/mira_agent/graph: LangGraph state, context, graph builder, and nodes.
-- src/mira_agent/integrations: Exa and LLM provider wrappers.
+- src/mira_agent/integrations: Exa, LLM provider, GA4 CSV, and CRM CSV wrappers/parsers.
+- src/mira_agent/services: deterministic service logic, including the Phase 3 MMM-style budget
+  allocation engine.
 - src/mira_agent/repositories: Supabase/PostgREST table operations.
 - src/mira_agent/schemas: Pydantic request/response models.
-- supabase/migrations: SQL schema and RLS policies.
+- supabase/migrations: SQL schema and RLS policies, including document fields on action_sheets.
 - scripts: repeatable local demo user/org setup.
-- tests/unit: fake-client graph, content, and Exa tests.
-- tests/api: cheap API/auth/health tests.
+- tests/unit: fake-client graph, content, Exa, and report repository tests.
+- tests/api: cheap API/auth/health/report tests.
 - tests/integration: real-JWT Supabase RLS tests.
-- ui: minimal Vite placeholder shell.
+- ui: Vite product UI served by FastAPI after build.
+- ops/azure: Azure Container Apps deploy and smoke documentation.
+- Dockerfile builds the Vite bundle, runs uv sync --no-dev --no-editable, and starts the
+  installed uvicorn executable from .venv without uv run at container startup.
 
 Validation:
 - uv sync
 - make validate
+- cd ui && npm run build
 - supabase start
 - supabase db reset
 - uv run python scripts/create_demo_users.py
 - RUN_RLS_TESTS=1 uv run pytest tests/integration/test_rls_real_jwt.py
 - make build
 - make docker
+- curl -s http://localhost:8123/health
+- curl -s http://localhost:8123/health/db
+- curl -s http://localhost:8123/api/config

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 import time
 
 from pydantic import BaseModel, Field
@@ -7,7 +8,7 @@ from pydantic_ai import Agent
 
 from mira_agent.exceptions import ApiError
 from mira_agent.graph.context import MiraContext
-from mira_agent.graph.state import MiraState, ResearchFinding
+from mira_agent.graph.state import MiraState, NodeError, ResearchFinding
 from mira_agent.repositories.campaigns import (
     create_action_sheet_with_approvals,
     finish_campaign_run,
@@ -98,8 +99,13 @@ async def generate_recommendations(state: MiraState, context: MiraContext) -> li
         ),
         retries=2,
     )
-    result = await agent.run(_build_content_prompt(request=request, findings=findings))
-    output = ContentNodeOutput.model_validate(result.output)
+    try:
+        result = await agent.run(_build_content_prompt(request=request, findings=findings))
+        output = ContentNodeOutput.model_validate(result.output)
+    except Exception:
+        _record_content_fallback(state)
+        return _fallback_recommendations(request=request, findings=findings)
+
     recommendations = _normalize_recommendations(
         output.recommendations,
         findings=findings,
@@ -107,6 +113,56 @@ async def generate_recommendations(state: MiraState, context: MiraContext) -> li
     if not recommendations:
         raise ApiError("CONTENT_EMPTY", "The content node returned no recommendations.", 500)
     return recommendations
+
+
+def _record_content_fallback(state: MiraState) -> None:
+    errors = list(state.get("errors", []))
+    errors.append(
+        NodeError(
+            node="content",
+            code="LLM_STRUCTURED_OUTPUT_UNAVAILABLE",
+            message="Structured LLM output was unavailable; used sourced fallback recommendations.",
+        )
+    )
+    state["errors"] = errors
+
+
+def _fallback_recommendations(
+    *, request: AnalyzeRequest, findings: list[ResearchFinding]
+) -> list[Recommendation]:
+    primary_source = findings[0].url if findings else "brief:goal"
+    secondary_source = findings[1].url if len(findings) > 1 else "brief:audience"
+    primary_evidence = _fallback_evidence(findings[0]) if findings else request.goal
+    channel_focus = ", ".join(request.channels)
+
+    return [
+        Recommendation(
+            id="rec_content_1",
+            domain="content",
+            finding=f"Use {request.product} proof around {primary_evidence}.",
+            source=primary_source,
+            effort="low",
+            impact="high",
+            action=f"Publish one sourced {channel_focus} post tied to {request.goal}.",
+            needs_approval=True,
+        ),
+        Recommendation(
+            id="rec_research_2",
+            domain="research",
+            finding=f"Anchor the campaign message on the {request.audience} buying trigger.",
+            source=secondary_source,
+            effort="medium",
+            impact="medium",
+            action="Turn the brief into one audience-specific positioning test.",
+            needs_approval=False,
+        ),
+    ]
+
+
+def _fallback_evidence(finding: ResearchFinding) -> str:
+    if finding.highlights:
+        return finding.highlights[0]
+    return finding.title
 
 
 def assert_valid_sources(recommendations: list[Recommendation]) -> None:
@@ -153,9 +209,13 @@ def _normalize_recommendations(
 
 
 def _normalize_recommendation_id(raw_id: str, index: int, seen_ids: set[str]) -> str:
-    candidate = raw_id.strip() if raw_id else f"rec_{index}"
-    if candidate in seen_ids:
-        candidate = f"{candidate}_{index}"
+    base = re.sub(r"[^A-Za-z0-9_-]+", "_", raw_id.strip()).strip("_") if raw_id else ""
+    root = base or f"rec_{index}"
+    candidate = root
+    suffix = index
+    while candidate in seen_ids:
+        candidate = f"{root}_{suffix}"
+        suffix += 1
     seen_ids.add(candidate)
     return candidate
 

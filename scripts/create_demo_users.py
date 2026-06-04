@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import os
+import secrets
 from dataclasses import dataclass
+from pathlib import Path
 
 import httpx
 
@@ -12,7 +14,30 @@ OUTSIDER_ORG_ID = "22222222-2222-4222-8222-222222222222"
 ANALYST_EMAIL = "analyst@mira.local"
 ADMIN_EMAIL = "admin@mira.local"
 OUTSIDER_EMAIL = "outsider@mira.local"
-DEMO_PASSWORD = "MiraPhase05!"
+DEMO_PASSWORD_KEY = "DEMO_PASSWORD"
+DEMO_ENV_PATH = Path(".demo.env")
+
+
+def _read_demo_env() -> dict[str, str]:
+    if not DEMO_ENV_PATH.exists():
+        return {}
+    values: dict[str, str] = {}
+    for line in DEMO_ENV_PATH.read_text(encoding="utf-8").splitlines():
+        key, separator, value = line.partition("=")
+        if separator and key:
+            values[key] = value.strip().strip("\"'")
+    return values
+
+
+def _load_demo_password() -> str:
+    if password := os.getenv(DEMO_PASSWORD_KEY):
+        return password
+    if password := _read_demo_env().get(DEMO_PASSWORD_KEY):
+        return password
+    return f"mira_{secrets.token_urlsafe(24)}A1!"
+
+
+DEMO_PASSWORD = _load_demo_password()
 
 
 @dataclass(slots=True)
@@ -63,8 +88,51 @@ def _create_user(email: str) -> None:
         },
         timeout=10.0,
     )
-    if response.status_code not in {200, 201, 422}:
-        response.raise_for_status()
+    if response.status_code in {200, 201}:
+        return
+    if response.status_code == 422:
+        _update_user_password(_find_user_id(email))
+        return
+    response.raise_for_status()
+
+
+def _find_user_id(email: str) -> str:
+    settings = get_settings()
+    response = httpx.get(
+        f"{settings.auth_url}/admin/users",
+        params={"page": 1, "per_page": 1000},
+        headers=_service_headers(),
+        timeout=10.0,
+    )
+    response.raise_for_status()
+    payload = response.json()
+    users = payload.get("users", []) if isinstance(payload, dict) else payload
+    if not isinstance(users, list):
+        raise RuntimeError("Supabase admin user list response was not recognized.")
+    for user in users:
+        if not isinstance(user, dict):
+            continue
+        if str(user.get("email", "")).lower() != email.lower():
+            continue
+        user_id = user.get("id")
+        if isinstance(user_id, str):
+            return user_id
+    raise RuntimeError(f"Could not find existing demo user {email}.")
+
+
+def _update_user_password(user_id: str) -> None:
+    settings = get_settings()
+    response = httpx.put(
+        f"{settings.auth_url}/admin/users/{user_id}",
+        headers=_service_headers(),
+        json={
+            "password": DEMO_PASSWORD,
+            "email_confirm": True,
+            "user_metadata": {"source": "mira_phase_0_5"},
+        },
+        timeout=10.0,
+    )
+    response.raise_for_status()
 
 
 def _sign_in(email: str) -> tuple[str, str]:
@@ -134,17 +202,18 @@ def ensure_demo_state() -> DemoState:
 
 def main() -> None:
     state = ensure_demo_state()
-    env_lines = [
+    token_lines = [
         f"DEMO_ORG_ID={state.demo_org_id}",
         f"OUTSIDER_ORG_ID={state.outsider_org_id}",
         f"ANALYST_JWT={state.analyst_jwt}",
         f"ADMIN_JWT={state.admin_jwt}",
         f"OUTSIDER_JWT={state.outsider_jwt}",
     ]
+    env_lines = [f"{DEMO_PASSWORD_KEY}={DEMO_PASSWORD}", *token_lines]
     with open(".demo.env", "w", encoding="utf-8") as handle:
         handle.write("\n".join(env_lines) + "\n")
     if os.getenv("MIRA_PRINT_DEMO_TOKENS") == "1":
-        print("\n".join(env_lines))
+        print("\n".join(token_lines))
     else:
         print("Demo users and orgs are ready. Tokens written to .demo.env.")
 

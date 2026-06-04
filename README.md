@@ -1,6 +1,23 @@
 # MIRA Agent
 
-Phase 1 MIRA app. The app preserves the validated FastAPI, Supabase Auth, org-scoped RLS, and runtime user-JWT database path, then adds the first real analysis workflow: brief -> LangGraph shell -> Exa research -> PydanticAI content recommendations -> persisted action sheet/audit rows.
+MIRA is a FastAPI + React/Vite media-plan agent served from one Docker image. Phase 2 remains
+available as the shipped baseline, while Phase 3 adds the document-first media-plan path:
+sign in with Supabase, submit a free-text brief plus CRM and GA4 CSVs, run the LangGraph media-plan
+workflow, view the saved strategy document, inspect audit rows, approve the document as Admin, and
+export Markdown.
+
+Current runtime graph: router -> Exa research -> PydanticAI content recommendations.
+
+Current Phase 3 runtime graph:
+
+`brief -> research + audience + performance -> strategy`
+
+Phase 3 budget allocation numbers come from deterministic `services/mmm.py` logic, not LLM prose.
+See:
+
+- `../.agents/plans/phase-3-media-plan-agent-mmm.md`
+- `../.agents/plans/phase-3-media-plan-contract-lock.md`
+- `../.agents/plans/phase-3-media-plan-implementation.md`
 
 ## Local Setup
 
@@ -13,6 +30,9 @@ uv run python scripts/create_demo_users.py
 make dev
 ```
 
+The seed script writes `.demo.env` with fresh JWTs and `DEMO_PASSWORD`; the file is ignored by
+Git and should stay local.
+
 `.env` must include local Supabase values plus:
 
 ```bash
@@ -24,13 +44,22 @@ EXA_API_KEY=replace-with-exa-key
 EXA_NUM_RESULTS=5
 ```
 
+Open `http://localhost:8123`, sign in with a seeded Analyst user, submit the media-plan input
+with CRM and GA4 CSV files, then view the report and audit tabs. Sign out and sign in as Admin to
+approve or reject the pending document approval. Use Export Markdown from the report view.
+CRM and GA4 CSV uploads are capped at 2 MB each.
+
+The browser loads Supabase runtime config from `/api/config`; no `VITE_*` Supabase values are
+required for Docker or Azure.
+
 ## Validate
 
 ```bash
 make validate
+cd ui && npm run build
 ```
 
-`make validate` runs compile checks, Ruff, and the unit/API test suite. For local Supabase and end-to-end checks, run:
+For local Supabase and real-JWT checks:
 
 ```bash
 supabase start
@@ -41,10 +70,30 @@ make dev
 make health
 ```
 
-`make dev` starts `mira_agent.main:app` on port `8123`. Both health endpoints should return:
+`make dev` starts `mira_agent.main:app` on port `8123`. Health endpoints:
 
-```json
-{"status":"healthy"}
+```bash
+curl -fsS http://localhost:8123/health
+curl -fsS http://localhost:8123/health/db
+curl -fsS http://localhost:8123/api/config
 ```
 
-`/api/analyze` requires a Supabase Bearer JWT and an analyst/admin org role. Successful runs return sourced recommendations, create audit rows for `router`, `research`, and `content`, and create pending approval rows for high-impact recommendations.
+## API Routes
+
+- `GET /health`
+- `GET /health/db`
+- `GET /api/config`
+- `POST /api/media-plan`
+- `POST /api/analyze`
+- `GET /api/action-sheets/{action_sheet_id}`
+- `GET /api/runs/{run_id}/audit`
+- `POST /api/action-sheets/{action_sheet_id}/approvals/{recommendation_id}`
+
+All report, audit, media-plan, analyze, and approval request paths use the Supabase user JWT with
+the anon key. The service-role key is restricted to migrations, seed scripts, and tests.
+
+## Azure Smoke
+
+Build the one-image app and deploy it to Azure Container Apps with runtime env vars and
+`secretref:` values. See `ops/azure/README.md` for commands and the smoke checklist covering
+health, DB health, UI login, media-plan submission, report, audit, approval, and Markdown export.

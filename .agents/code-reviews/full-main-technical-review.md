@@ -100,16 +100,20 @@ suggestion: Split RLS/auth persistence checks from live external integrations, u
 
 ## Resolution
 
-All findings are fixed and verified locally on branch `fix/full-review-findings`.
+All findings are fixed, deployed, and verified from branch `fix/full-review-findings`.
 
 - Generated records now use backend-only write authority after user-JWT RLS authorization. Authenticated browser writes are revoked, RLS helper functions are private, and a real-JWT security regression test proves Analysts cannot forge audit rows or call the helper RPC.
 - The React UI preserves an action-sheet ID across the Analyst-to-Admin handoff and supports load-by-ID. Approval and document status now update atomically.
 - Strategy fallback attribution, source claims, budget parsing, GA4 finite-value checks, unallocated budget reporting, and stable request-validation errors have focused regression coverage.
 - The real-JWT harness refuses non-local Supabase mutation unless `RUN_REMOTE_RLS_TESTS=1` is set,
   and its setup rows are removed from a `finally` block.
-- Validation passed: `make validate` with 64 tests, `make ui-build`, `git diff --check HEAD`, `npm audit --omit=dev`, a clean local Supabase migration reset, and the independent local real-JWT security test.
-
-The live production revision is not fixed yet. Azure Container Registry has not created the
-`phase-3-security-fix-20260604-amd64` manifest/tag despite layer uploads, so the hosted permission
-migration was intentionally not applied. Production remains on the previous compatible revision
-until BUG-034 is resolved and the coordinated image plus database deployment can be smoke-tested.
+- Validation passed: `make validate` with 64 tests, `make ui-build`, `git diff --check HEAD`,
+  `npm audit --omit=dev`, a clean local Supabase migration reset, and the independent local and
+  hosted real-JWT security tests.
+- GitHub Actions built `miraphase2ocxng.azurecr.io/mira-agent:phase-3-3f5e998-amd64` with OIDC and
+  a least-privilege `AcrPush` identity. Azure Container Apps revision
+  `mira-agent-phase-2--0000005` is healthy and serving 100% of traffic.
+- Hosted migration `202606040001_secure_backend_writes.sql` is applied. Live smoke tests passed
+  for direct-write denial, private helper RPCs, tenant isolation, Analyst approval denial, Admin
+  approval with persisted document status, stable validation errors, and an end-to-end media-plan
+  report with per-agent audit rows.

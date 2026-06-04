@@ -35,7 +35,8 @@ uses GitHub OIDC with the `mira-agent-github-acr-push` managed identity. That id
 `AcrPush` role on `miraphase2ocxng`; no registry password or Azure client secret is stored in
 GitHub.
 
-Pushing `main` or `fix/full-review-findings` triggers the workflow. It publishes:
+Pushing `main` triggers the workflow. Use `workflow_dispatch` to build another selected branch. It
+publishes:
 
 ```text
 miraphase2ocxng.azurecr.io/mira-agent:phase-3-<short-git-sha>-amd64

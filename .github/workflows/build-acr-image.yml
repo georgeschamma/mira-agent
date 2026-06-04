@@ -4,7 +4,6 @@ on:
   push:
     branches:
       - main
-      - fix/full-review-findings
   workflow_dispatch:
 
 permissions:

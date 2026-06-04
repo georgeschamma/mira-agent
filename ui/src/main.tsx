@@ -6,14 +6,13 @@ import {
   getActionSheet,
   getAuditTrace,
   loadRuntimeConfig,
-  runAnalyze,
+  runMediaPlan,
   updateApproval,
 } from "./api";
 import { buildReportMarkdown } from "./reportMarkdown";
 import { getSupabaseClient } from "./supabase";
 import type {
   ActionSheetReportResponse,
-  AnalyzeRequest,
   ApprovalUpdateStatus,
   AuditTraceResponse,
   Recommendation,
@@ -26,22 +25,20 @@ const DEMO_ORG_ID = "11111111-1111-4111-8111-111111111111";
 type RunState = "idle" | "loading" | "success" | "error";
 type ActiveTab = "report" | "audit";
 
-type BriefForm = {
+type MediaPlanForm = {
   org_id: string;
-  product: string;
-  audience: string;
-  channels: string;
-  budget: string;
-  goal: string;
+  brief: string;
 };
 
-const initialBrief: BriefForm = {
+const initialMediaPlan: MediaPlanForm = {
   org_id: DEMO_ORG_ID,
-  product: "MIRA",
-  audience: "B2B marketers",
-  channels: "linkedin",
-  budget: "1000",
-  goal: "book demos",
+  brief: [
+    "Product: MIRA",
+    "Audience: B2B marketers",
+    "Channels: linkedin, paid search",
+    "Budget: 1000",
+    "Goal: book demos",
+  ].join("\n"),
 };
 
 function App() {
@@ -51,7 +48,9 @@ function App() {
   const [booting, setBooting] = useState(true);
   const [email, setEmail] = useState("analyst@mira.local");
   const [password, setPassword] = useState("");
-  const [brief, setBrief] = useState<BriefForm>(initialBrief);
+  const [mediaPlan, setMediaPlan] = useState<MediaPlanForm>(initialMediaPlan);
+  const [crmFile, setCrmFile] = useState<File | null>(null);
+  const [ga4File, setGa4File] = useState<File | null>(null);
   const [runState, setRunState] = useState<RunState>("idle");
   const [activeTab, setActiveTab] = useState<ActiveTab>("report");
   const [report, setReport] = useState<ActionSheetReportResponse | null>(null);
@@ -132,10 +131,14 @@ function App() {
     setRunState("idle");
   }
 
-  async function submitBrief(event: React.FormEvent<HTMLFormElement>) {
+  async function submitMediaPlan(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!session?.access_token) {
-      setMessage("Sign in before running analysis.");
+      setMessage("Sign in before running a media plan.");
+      return;
+    }
+    if (!crmFile || !ga4File) {
+      setMessage("Upload both CRM and GA4 CSV files.");
       return;
     }
 
@@ -145,8 +148,12 @@ function App() {
     setAudit(null);
 
     try {
-      const payload = briefToRequest(brief);
-      const analysis = await runAnalyze(session.access_token, payload);
+      const analysis = await runMediaPlan(session.access_token, {
+        orgId: mediaPlan.org_id.trim(),
+        brief: mediaPlan.brief.trim(),
+        crmCsv: crmFile,
+        ga4Csv: ga4File,
+      });
       const [nextReport, nextAudit] = await Promise.all([
         getActionSheet(session.access_token, analysis.action_sheet_id),
         getAuditTrace(session.access_token, analysis.run_id),
@@ -157,7 +164,7 @@ function App() {
       setRunState("success");
     } catch (error) {
       setRunState("error");
-      setMessage(error instanceof Error ? error.message : "Analysis failed.");
+      setMessage(error instanceof Error ? error.message : "Media plan failed.");
     }
   }
 
@@ -177,6 +184,24 @@ function App() {
       const refreshedReport = await getActionSheet(session.access_token, report.action_sheet_id);
       setReport(refreshedReport);
       setMessage(`Recommendation ${status}.`);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Approval update failed.");
+    } finally {
+      setApprovalBusyId(null);
+    }
+  }
+
+  async function changeDocumentApproval(status: ApprovalUpdateStatus) {
+    if (!session?.access_token || !report) {
+      return;
+    }
+    setApprovalBusyId("document");
+    setMessage("");
+    try {
+      await updateApproval(session.access_token, report.action_sheet_id, "document", status);
+      const refreshedReport = await getActionSheet(session.access_token, report.action_sheet_id);
+      setReport(refreshedReport);
+      setMessage(`Media plan ${status}.`);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Approval update failed.");
     } finally {
@@ -276,56 +301,46 @@ function App() {
         <div className="workspace">
           <section className="panel brief-panel">
             <div className="panel-heading">
-              <h2>Campaign Brief</h2>
+              <h2>Media Plan Input</h2>
               <span className={`status-pill status-${runState}`}>{runState}</span>
             </div>
-            <form className="brief-grid" onSubmit={(event) => void submitBrief(event)}>
+            <form className="stack-form" onSubmit={(event) => void submitMediaPlan(event)}>
               <label>
                 Org ID
                 <input
-                  value={brief.org_id}
-                  onChange={(event) => setBriefField("org_id", event.target.value, setBrief)}
+                  value={mediaPlan.org_id}
+                  onChange={(event) =>
+                    setMediaPlanField("org_id", event.target.value, setMediaPlan)
+                  }
                 />
               </label>
               <label>
-                Product
-                <input
-                  value={brief.product}
-                  onChange={(event) => setBriefField("product", event.target.value, setBrief)}
+                Brief
+                <textarea
+                  value={mediaPlan.brief}
+                  onChange={(event) =>
+                    setMediaPlanField("brief", event.target.value, setMediaPlan)
+                  }
                 />
               </label>
               <label>
-                Audience
+                CRM CSV
                 <input
-                  value={brief.audience}
-                  onChange={(event) => setBriefField("audience", event.target.value, setBrief)}
+                  accept=".csv,text/csv"
+                  type="file"
+                  onChange={(event) => setCrmFile(event.target.files?.[0] ?? null)}
                 />
               </label>
               <label>
-                Channels
+                GA4 CSV
                 <input
-                  value={brief.channels}
-                  onChange={(event) => setBriefField("channels", event.target.value, setBrief)}
+                  accept=".csv,text/csv"
+                  type="file"
+                  onChange={(event) => setGa4File(event.target.files?.[0] ?? null)}
                 />
               </label>
-              <label>
-                Budget
-                <input
-                  min="0"
-                  type="number"
-                  value={brief.budget}
-                  onChange={(event) => setBriefField("budget", event.target.value, setBrief)}
-                />
-              </label>
-              <label>
-                Goal
-                <input
-                  value={brief.goal}
-                  onChange={(event) => setBriefField("goal", event.target.value, setBrief)}
-                />
-              </label>
-              <button className="primary-button full-width" disabled={runState === "loading"} type="submit">
-                {runState === "loading" ? "Running" : "Run analysis"}
+              <button className="primary-button" disabled={runState === "loading"} type="submit">
+                {runState === "loading" ? "Running" : "Run media plan"}
               </button>
             </form>
           </section>
@@ -366,59 +381,90 @@ function App() {
                 {runState === "loading" ? "Analysis is running." : "No report loaded."}
               </div>
             ) : activeTab === "report" ? (
-              <div className="recommendation-list">
-                {report.recommendations.map((recommendation) => {
-                  const approval = approvalById.get(recommendation.id);
-                  const approvalStatus = recommendation.needs_approval
-                    ? approval?.status ?? "pending"
-                    : "not required";
-                  const canUpdate = recommendation.needs_approval && approvalStatus === "pending";
+              report.document_markdown ? (
+                <div className="document-output">
+                  <div className="document-toolbar">
+                    <span className={`badge approval-${documentApprovalStatus(report)}`}>
+                      {documentApprovalStatus(report)}
+                    </span>
+                    {documentApprovalStatus(report) === "pending" ? (
+                      <div className="approval-actions">
+                        <button
+                          className="secondary-button"
+                          disabled={approvalBusyId === "document"}
+                          type="button"
+                          onClick={() => void changeDocumentApproval("approved")}
+                        >
+                          Approve
+                        </button>
+                        <button
+                          className="secondary-button danger"
+                          disabled={approvalBusyId === "document"}
+                          type="button"
+                          onClick={() => void changeDocumentApproval("rejected")}
+                        >
+                          Reject
+                        </button>
+                      </div>
+                    ) : null}
+                  </div>
+                  <pre>{report.document_markdown}</pre>
+                </div>
+              ) : (
+                <div className="recommendation-list">
+                  {report.recommendations.map((recommendation) => {
+                    const approval = approvalById.get(recommendation.id);
+                    const approvalStatus = recommendation.needs_approval
+                      ? approval?.status ?? "pending"
+                      : "not required";
+                    const canUpdate = recommendation.needs_approval && approvalStatus === "pending";
 
-                  return (
-                    <article className="recommendation-item" key={recommendation.id}>
-                      <div className="item-header">
-                        <div>
-                          <p className="eyebrow">{recommendation.domain}</p>
-                          <h3>{recommendation.finding}</h3>
+                    return (
+                      <article className="recommendation-item" key={recommendation.id}>
+                        <div className="item-header">
+                          <div>
+                            <p className="eyebrow">{recommendation.domain}</p>
+                            <h3>{recommendation.finding}</h3>
+                          </div>
+                          <span className={`badge approval-${approvalStatus.replace(" ", "-")}`}>
+                            {approvalStatus}
+                          </span>
                         </div>
-                        <span className={`badge approval-${approvalStatus.replace(" ", "-")}`}>
-                          {approvalStatus}
-                        </span>
-                      </div>
-                      <p>{recommendation.action}</p>
-                      <div className="meta-row">
-                        <span className={`badge effort-${recommendation.effort}`}>
-                          Effort: {recommendation.effort}
-                        </span>
-                        <span className={`badge impact-${recommendation.impact}`}>
-                          Impact: {recommendation.impact}
-                        </span>
-                        {sourceElement(recommendation.source)}
-                      </div>
-                      {canUpdate ? (
-                        <div className="approval-actions">
-                          <button
-                            className="secondary-button"
-                            disabled={approvalBusyId === recommendation.id}
-                            type="button"
-                            onClick={() => void changeApproval(recommendation, "approved")}
-                          >
-                            Approve
-                          </button>
-                          <button
-                            className="secondary-button danger"
-                            disabled={approvalBusyId === recommendation.id}
-                            type="button"
-                            onClick={() => void changeApproval(recommendation, "rejected")}
-                          >
-                            Reject
-                          </button>
+                        <p>{recommendation.action}</p>
+                        <div className="meta-row">
+                          <span className={`badge effort-${recommendation.effort}`}>
+                            Effort: {recommendation.effort}
+                          </span>
+                          <span className={`badge impact-${recommendation.impact}`}>
+                            Impact: {recommendation.impact}
+                          </span>
+                          {sourceElement(recommendation.source)}
                         </div>
-                      ) : null}
-                    </article>
-                  );
-                })}
-              </div>
+                        {canUpdate ? (
+                          <div className="approval-actions">
+                            <button
+                              className="secondary-button"
+                              disabled={approvalBusyId === recommendation.id}
+                              type="button"
+                              onClick={() => void changeApproval(recommendation, "approved")}
+                            >
+                              Approve
+                            </button>
+                            <button
+                              className="secondary-button danger"
+                              disabled={approvalBusyId === recommendation.id}
+                              type="button"
+                              onClick={() => void changeApproval(recommendation, "rejected")}
+                            >
+                              Reject
+                            </button>
+                          </div>
+                        ) : null}
+                      </article>
+                    );
+                  })}
+                </div>
+              )
             ) : (
               <div className="audit-list">
                 {(audit?.rows ?? []).map((row) => (
@@ -449,26 +495,17 @@ function App() {
   );
 }
 
-function setBriefField(
-  field: keyof BriefForm,
+function setMediaPlanField(
+  field: keyof MediaPlanForm,
   value: string,
-  setBrief: React.Dispatch<React.SetStateAction<BriefForm>>,
+  setMediaPlan: React.Dispatch<React.SetStateAction<MediaPlanForm>>,
 ) {
-  setBrief((current) => ({ ...current, [field]: value }));
+  setMediaPlan((current) => ({ ...current, [field]: value }));
 }
 
-function briefToRequest(brief: BriefForm): AnalyzeRequest {
-  return {
-    org_id: brief.org_id.trim(),
-    product: brief.product.trim(),
-    audience: brief.audience.trim(),
-    channels: brief.channels
-      .split(",")
-      .map((channel) => channel.trim())
-      .filter(Boolean),
-    budget: Number.parseInt(brief.budget, 10) || 0,
-    goal: brief.goal.trim(),
-  };
+function documentApprovalStatus(report: ActionSheetReportResponse): string {
+  const approval = report.approvals.find((item) => item.recommendation_id === "document");
+  return approval?.status ?? report.document_status ?? "pending";
 }
 
 function sourceElement(source: string | null) {

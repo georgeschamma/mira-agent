@@ -8,7 +8,7 @@ from fastapi.staticfiles import StaticFiles
 
 from mira_agent.config import get_settings
 from mira_agent.exceptions import ApiError, api_error_handler, unhandled_error_handler
-from mira_agent.routers import analyze, approvals, config, health, reports
+from mira_agent.routers import analyze, approvals, config, health, media_plan, reports
 
 
 def create_app() -> FastAPI:
@@ -34,6 +34,7 @@ def create_app() -> FastAPI:
     app.include_router(health.router)
     app.include_router(config.router)
     app.include_router(analyze.router)
+    app.include_router(media_plan.router)
     app.include_router(approvals.router)
     app.include_router(reports.router)
 

@@ -4,6 +4,10 @@ export function buildReportMarkdown(
   report: ActionSheetReportResponse,
   audit: AuditTraceResponse | null,
 ): string {
+  if (report.document_markdown) {
+    return `${report.document_markdown.trim()}\n\n${auditMarkdown(audit)}\n`;
+  }
+
   const approvals = new Map(
     report.approvals.map((approval) => [approval.recommendation_id, approval.status]),
   );
@@ -37,6 +41,23 @@ export function buildReportMarkdown(
       }`,
       "",
     ]),
+    auditMarkdown({ run_id: report.run_id, rows: auditRows }),
+    "## Metadata",
+    `- Action sheet: ${report.action_sheet_id}`,
+    `- Campaign: ${report.campaign_id}`,
+    `- Run: ${report.run_id}`,
+    `- Model: ${normalizeText(report.model_used)}`,
+    `- Processing: ${report.processing_ms ?? "unknown"} ms`,
+  ];
+
+  return `${lines.join("\n").trim()}\n`;
+}
+
+function auditMarkdown(audit: AuditTraceResponse | null): string {
+  const auditRows = [...(audit?.rows ?? [])].sort(
+    (left, right) => left.step_index - right.step_index,
+  );
+  return [
     "## Audit Trace",
     "",
     ...auditRows.flatMap((row) => [
@@ -47,15 +68,7 @@ export function buildReportMarkdown(
       `- Model: ${normalizeText(row.model_used ?? "none")}`,
       "",
     ]),
-    "## Metadata",
-    `- Action sheet: ${report.action_sheet_id}`,
-    `- Campaign: ${report.campaign_id}`,
-    `- Run: ${report.run_id}`,
-    `- Model: ${normalizeText(report.model_used)}`,
-    `- Processing: ${report.processing_ms ?? "unknown"} ms`,
-  ];
-
-  return `${lines.join("\n").trim()}\n`;
+  ].join("\n").trim();
 }
 
 function normalizeText(value: string): string {

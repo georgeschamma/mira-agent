@@ -30,6 +30,9 @@ class ActionSheetReportResponse(BaseModel):
     approvals: list[ApprovalState]
     model_used: str
     processing_ms: int | None = None
+    document_markdown: str | None = None
+    document_metadata: dict[str, object] | None = None
+    document_status: str | None = None
     created_at: str | None = None
 
 

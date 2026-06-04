@@ -5,10 +5,11 @@ from pydantic_ai.models.test import TestModel
 
 from mira_agent.config import Settings
 from mira_agent.exceptions import ApiError
-from mira_agent.graph.graph import run_mira_analysis
+from mira_agent.graph.graph import run_media_plan_analysis, run_mira_analysis
 from mira_agent.graph.state import ResearchFinding
 from mira_agent.schemas.analyze import AnalyzeRequest
 from mira_agent.schemas.auth import CurrentUser
+from mira_agent.schemas.media_plan import MediaPlanGraphRequest
 
 
 class FakeRlsClient:
@@ -137,3 +138,61 @@ async def test_run_mira_analysis_requires_integration_config_without_fakes() -> 
         )
 
     assert exc_info.value.code == "INTEGRATION_NOT_CONFIGURED"
+
+
+@pytest.mark.asyncio
+async def test_run_media_plan_analysis_writes_phase_3_audit_and_document() -> None:
+    client = FakeRlsClient()
+    model = TestModel(
+        custom_output_args={
+            "executive_summary": "Use fixed allocation math.",
+            "audience_strategy": "Target leads.",
+            "channel_rationale": "Review sparse channel history.",
+            "sequencing": "Launch after approval.",
+            "risks": "Sparse data is flagged.",
+            "claims": [
+                {"claim": "Allocation is deterministic.", "source": "performance:allocation"}
+            ],
+        }
+    )
+
+    response = await run_media_plan_analysis(
+        client=client,  # type: ignore[arg-type]
+        request=MediaPlanGraphRequest(
+            org_id="11111111-1111-4111-8111-111111111111",
+            brief="Product: MIRA\nAudience: B2B marketers\nBudget: 300\nGoal: book demos",
+            crm_csv_text="email,company,lifecycle_stage\na@example.com,Acme,lead\n",
+            crm_filename="crm.csv",
+            ga4_csv_text="\n".join(
+                [
+                    "date,source,medium,channel,cost,conversions,total_revenue",
+                    "2026-05-01,linkedin,paid,Paid Social,100,4,400",
+                    "2026-05-02,linkedin,paid,Paid Social,100,5,500",
+                    "2026-05-03,linkedin,paid,Paid Social,100,6,600",
+                ]
+            ),
+            ga4_filename="ga4.csv",
+        ),
+        user=CurrentUser(id="user_1", token="jwt"),
+        settings=Settings(
+            llm_model="test-model",
+            llm_api_key="test",
+            exa_api_key="test",
+            exa_num_results=2,
+        ),
+        research_client=FakeResearchClient(),
+        model=model,
+    )
+
+    audit_rows = [
+        payload for table, payload in client.inserts if table == "audit_log"
+    ]
+    audit_nodes_by_step = [
+        row["node"] for row in sorted(audit_rows, key=lambda item: item["step_index"])
+    ]
+    sheet_rows = [payload for table, payload in client.inserts if table == "action_sheets"]
+
+    assert response.document_markdown.startswith("# Media Plan")
+    assert response.approval_id
+    assert audit_nodes_by_step == ["brief", "research", "audience", "performance", "strategy"]
+    assert sheet_rows[-1]["document_status"] == "pending"

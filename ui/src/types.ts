@@ -4,6 +4,7 @@ export type Impact = "low" | "medium" | "high";
 export type ApprovalStatus = "pending" | "approved" | "rejected";
 export type ApprovalUpdateStatus = "approved" | "rejected";
 export type Confidence = "high" | "medium" | "low";
+export type DocumentStatus = "draft" | "pending" | "approved" | "rejected";
 
 export type AnalyzeRequest = {
   org_id: string;
@@ -57,7 +58,65 @@ export type ActionSheetReportResponse = {
   approvals: ApprovalState[];
   model_used: string;
   processing_ms: number | null;
+  document_markdown: string | null;
+  document_metadata: Record<string, unknown> | null;
+  document_status: DocumentStatus | null;
   created_at: string | null;
+};
+
+export type ParseWarningResponse = {
+  row_number: number | null;
+  code: string;
+  message: string;
+};
+
+export type FileMetadata = {
+  filename: string;
+  row_count: number;
+  warnings: ParseWarningResponse[];
+};
+
+export type AudienceSegmentResponse = {
+  reference: string;
+  label: string;
+  count: number;
+  dimension: string;
+  value: string;
+};
+
+export type ChannelSummaryResponse = {
+  channel: string;
+  row_count: number;
+  total_cost: number;
+  total_response: number;
+  unique_spend_points: number;
+  sufficient_data: boolean;
+  source_ref: string;
+};
+
+export type BudgetAllocationResponse = {
+  channel: string;
+  current_spend: number | null;
+  recommended_spend: number | null;
+  delta: number | null;
+  projected_response: number | null;
+  marginal_roi: number | null;
+  zone: string;
+};
+
+export type MediaPlanResponse = {
+  campaign_id: string;
+  run_id: string;
+  action_sheet_id: string;
+  approval_id: string | null;
+  document_markdown: string;
+  document_status: DocumentStatus;
+  approvals: ApprovalStatus[];
+  crm_file: FileMetadata;
+  ga4_file: FileMetadata;
+  audience_segments: AudienceSegmentResponse[];
+  channel_summaries: ChannelSummaryResponse[];
+  allocations: BudgetAllocationResponse[];
 };
 
 export type AuditRowResponse = {

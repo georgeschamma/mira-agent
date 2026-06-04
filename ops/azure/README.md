@@ -111,8 +111,11 @@ curl -fsS "$APP_URL/api/config"
 Then open `$APP_URL` in a clean browser and verify:
 
 - Login works for the seeded Analyst user.
-- Submit a brief and receive a sourced report.
-- Audit trace shows `router`, `research`, and `content` in order.
-- Markdown export downloads a non-empty report.
+- Submit a free-text brief with CRM and GA4 CSV uploads and receive a sourced media-plan document.
+- Audit trace shows `brief`, `research`, `audience`, `performance`, and `strategy` in order.
+- Markdown export downloads a non-empty media plan.
 - Analyst approval is rejected or hidden.
-- Admin can approve or reject a pending high-impact recommendation.
+- Admin can approve or reject the pending document approval.
+
+The legacy Phase 2 `/api/analyze` route may remain available for baseline regression checks, but
+Phase 3 smoke should focus on `POST /api/media-plan`.

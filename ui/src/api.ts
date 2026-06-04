@@ -6,6 +6,7 @@ import type {
   ApprovalResponse,
   ApprovalUpdateStatus,
   AuditTraceResponse,
+  MediaPlanResponse,
   RuntimeConfigResponse,
 } from "./types";
 
@@ -21,6 +22,28 @@ export async function runAnalyze(
     method: "POST",
     headers: authedJsonHeaders(token),
     body: JSON.stringify(payload),
+  });
+}
+
+export async function runMediaPlan(
+  token: string,
+  payload: {
+    orgId: string;
+    brief: string;
+    crmCsv: File;
+    ga4Csv: File;
+  },
+): Promise<MediaPlanResponse> {
+  const form = new FormData();
+  form.append("org_id", payload.orgId);
+  form.append("brief", payload.brief);
+  form.append("crm_csv", payload.crmCsv);
+  form.append("ga4_csv", payload.ga4Csv);
+
+  return requestJson<MediaPlanResponse>("/api/media-plan", {
+    method: "POST",
+    headers: authedHeaders(token),
+    body: form,
   });
 }
 

@@ -14,7 +14,8 @@ body {
 }
 
 button,
-input {
+input,
+textarea {
   font: inherit;
 }
 
@@ -187,7 +188,8 @@ label {
   gap: 6px;
 }
 
-input {
+input,
+textarea {
   background: #fbfcfb;
   border: 1px solid #cbd5d1;
   border-radius: 7px;
@@ -199,7 +201,13 @@ input {
   width: 100%;
 }
 
-input:focus {
+textarea {
+  min-height: 180px;
+  resize: vertical;
+}
+
+input:focus,
+textarea:focus {
   border-color: #0f766e;
   box-shadow: 0 0 0 3px rgba(15, 118, 110, 0.16);
 }
@@ -296,9 +304,33 @@ input:focus {
 }
 
 .recommendation-list,
-.audit-list {
+.audit-list,
+.document-output {
   display: grid;
-  gap: 0;
+  gap: 12px;
+}
+
+.document-toolbar {
+  align-items: center;
+  border-bottom: 1px solid #e5e9e4;
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+  padding-bottom: 12px;
+}
+
+.document-output pre {
+  background: #fbfcfb;
+  border: 1px solid #e5e9e4;
+  border-radius: 8px;
+  color: #20242b;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+  font-size: 0.84rem;
+  line-height: 1.6;
+  margin: 0;
+  overflow: auto;
+  padding: 14px;
+  white-space: pre-wrap;
 }
 
 .recommendation-item,

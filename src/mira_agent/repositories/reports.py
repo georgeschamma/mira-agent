@@ -20,7 +20,8 @@ async def fetch_action_sheet_report(
         rows = await client.select(
             "action_sheets",
             select=(
-                "id,campaign_id,run_id,recommendations,model_used,processing_ms,created_at,"
+                "id,campaign_id,run_id,recommendations,model_used,processing_ms,"
+                "document_markdown,document_metadata,document_status,created_at,"
                 "campaigns!inner(org_id,brief)"
             ),
             filters={"id": f"eq.{action_sheet_id}"},
@@ -48,6 +49,9 @@ async def fetch_action_sheet_report(
             approvals=approvals,
             model_used=str(row["model_used"]),
             processing_ms=row.get("processing_ms"),
+            document_markdown=row.get("document_markdown"),
+            document_metadata=row.get("document_metadata"),
+            document_status=row.get("document_status"),
             created_at=row.get("created_at"),
         )
     except KeyError as exc:

@@ -1,11 +1,23 @@
 # MIRA Agent
 
-Phase 2 MIRA app. FastAPI serves the API and the React/Vite browser app from one service.
-The product slice is: sign in with Supabase, submit a campaign brief, run the thin LangGraph
-analysis, view the saved report, inspect audit rows, approve high-impact recommendations as
-Admin, and export Markdown.
+MIRA is a FastAPI + React/Vite media-plan agent served from one Docker image. Phase 2 remains
+available as the shipped baseline, while Phase 3 adds the document-first media-plan path:
+sign in with Supabase, submit a free-text brief plus CRM and GA4 CSVs, run the LangGraph media-plan
+workflow, view the saved strategy document, inspect audit rows, approve the document as Admin, and
+export Markdown.
 
-The graph remains narrow: router -> Exa research -> PydanticAI content recommendations.
+Current runtime graph: router -> Exa research -> PydanticAI content recommendations.
+
+Current Phase 3 runtime graph:
+
+`brief -> research + audience + performance -> strategy`
+
+Phase 3 budget allocation numbers come from deterministic `services/mmm.py` logic, not LLM prose.
+See:
+
+- `../.agents/plans/phase-3-media-plan-agent-mmm.md`
+- `../.agents/plans/phase-3-media-plan-contract-lock.md`
+- `../.agents/plans/phase-3-media-plan-implementation.md`
 
 ## Local Setup
 
@@ -32,9 +44,10 @@ EXA_API_KEY=replace-with-exa-key
 EXA_NUM_RESULTS=5
 ```
 
-Open `http://localhost:8123`, sign in with a seeded Analyst user, submit the brief form, then
-view the report and audit tabs. Sign out and sign in as Admin to approve or reject pending
-high-impact recommendations. Use Export Markdown from the report view.
+Open `http://localhost:8123`, sign in with a seeded Analyst user, submit the media-plan input
+with CRM and GA4 CSV files, then view the report and audit tabs. Sign out and sign in as Admin to
+approve or reject the pending document approval. Use Export Markdown from the report view.
+CRM and GA4 CSV uploads are capped at 2 MB each.
 
 The browser loads Supabase runtime config from `/api/config`; no `VITE_*` Supabase values are
 required for Docker or Azure.
@@ -70,16 +83,17 @@ curl -fsS http://localhost:8123/api/config
 - `GET /health`
 - `GET /health/db`
 - `GET /api/config`
+- `POST /api/media-plan`
 - `POST /api/analyze`
 - `GET /api/action-sheets/{action_sheet_id}`
 - `GET /api/runs/{run_id}/audit`
 - `POST /api/action-sheets/{action_sheet_id}/approvals/{recommendation_id}`
 
-All report, audit, analyze, and approval request paths use the Supabase user JWT with the anon
-key. The service-role key is restricted to migrations, seed scripts, and tests.
+All report, audit, media-plan, analyze, and approval request paths use the Supabase user JWT with
+the anon key. The service-role key is restricted to migrations, seed scripts, and tests.
 
 ## Azure Smoke
 
 Build the one-image app and deploy it to Azure Container Apps with runtime env vars and
 `secretref:` values. See `ops/azure/README.md` for commands and the smoke checklist covering
-health, DB health, UI login, analyze, report, audit, approval, and Markdown export.
+health, DB health, UI login, media-plan submission, report, audit, approval, and Markdown export.

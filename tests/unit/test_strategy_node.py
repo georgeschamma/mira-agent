@@ -1,11 +1,16 @@
 from typing import Any
 
 import pytest
+from pydantic import ValidationError
 from pydantic_ai.models.test import TestModel
 
 from mira_agent.config import Settings
 from mira_agent.graph.context import MiraContext
-from mira_agent.graph.nodes.strategy import strategy_node, validate_source_claims
+from mira_agent.graph.nodes.strategy import (
+    StrategyNarrativeOutput,
+    strategy_node,
+    validate_source_claims,
+)
 from mira_agent.graph.state import ParsedMediaBrief, ResearchFinding
 from mira_agent.integrations.crm import AudienceSegment
 from mira_agent.integrations.ga4 import ChannelPerformanceSummary
@@ -154,3 +159,78 @@ async def test_strategy_node_renders_fixed_budget_table_and_saves_document() -> 
 def test_validate_source_claims_rejects_plain_http_sources() -> None:
     with pytest.raises(ValueError, match="Unsupported strategy source"):
         validate_source_claims([SourceClaim(claim="Insecure external source.", source="http://x.test")])
+
+
+def test_strategy_narrative_requires_source_claims() -> None:
+    with pytest.raises(ValidationError):
+        StrategyNarrativeOutput(
+            executive_summary="Summary",
+            audience_strategy="Audience",
+            channel_rationale="Channels",
+            sequencing="Sequence",
+            risks="Risks",
+            claims=[],
+        )
+
+
+@pytest.mark.asyncio
+async def test_strategy_fallback_is_marked_partial_and_not_model_backed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client = FakeRlsClient()
+    context = MiraContext(
+        client=client,  # type: ignore[arg-type]
+        user=CurrentUser(id="user_1", token="jwt"),
+        settings=Settings(llm_model="test-model", llm_api_key="test", exa_api_key="test"),
+        research_client=UnusedResearchClient(),
+        model=TestModel(),
+    )
+    state = {
+        "campaign_id": "campaign_1",
+        "run_id": "run_1",
+        "started_at": 0.0,
+        "parsed_brief": ParsedMediaBrief(
+            org_id="org_1",
+            product="MIRA",
+            audience="B2B marketers",
+            channels=["linkedin"],
+            budget=600,
+            goal="book demos",
+            raw_brief="Product: MIRA",
+        ),
+        "media_input": {
+            "org_id": "org_1",
+            "brief": "Product: MIRA",
+            "crm_csv_text": "",
+            "crm_filename": "crm.csv",
+            "ga4_csv_text": "",
+            "ga4_filename": "ga4.csv",
+        },
+        "findings": [],
+        "audience_segments": [],
+        "channel_summaries": [],
+        "allocations": [],
+        "warnings": [],
+        "errors": [],
+        "crm_warnings": [],
+        "ga4_warnings": [],
+        "crm_row_count": 0,
+        "ga4_row_count": 0,
+    }
+
+    async def fail_model_run(*args, **kwargs):
+        raise RuntimeError("forced model failure")
+
+    monkeypatch.setattr("mira_agent.graph.nodes.strategy.Agent.run", fail_model_run)
+
+    await strategy_node(state, context)  # type: ignore[arg-type]
+
+    audit = [payload for table, payload in client.inserts if table == "audit_log"][-1]
+    sheet = [payload for table, payload in client.inserts if table == "action_sheets"][-1]
+    run_status = [
+        payload["status"] for table, payload, _filters in client.updates if table == "campaign_runs"
+    ][-1]
+    assert audit["confidence"] == "low"
+    assert audit["model_used"] == "deterministic-fallback"
+    assert sheet["model_used"] == "deterministic-fallback"
+    assert run_status == "partial"

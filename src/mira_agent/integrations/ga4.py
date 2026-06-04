@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import csv
+import math
 from dataclasses import dataclass, field
 from datetime import datetime
 from io import StringIO
@@ -181,8 +182,8 @@ def _positive_float(raw: str, field_name: str) -> float:
         value = float(raw or "0")
     except ValueError as exc:
         raise CsvParseError(f"Invalid {field_name} value {raw!r}.") from exc
-    if value < 0:
-        raise CsvParseError(f"{field_name} cannot be negative.")
+    if not math.isfinite(value) or value < 0:
+        raise CsvParseError(f"{field_name} must be a finite non-negative number.")
     return value
 
 

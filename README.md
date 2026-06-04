@@ -45,8 +45,10 @@ EXA_NUM_RESULTS=5
 ```
 
 Open `http://localhost:8123`, sign in with a seeded Analyst user, submit the media-plan input
-with CRM and GA4 CSV files, then view the report and audit tabs. Sign out and sign in as Admin to
-approve or reject the pending document approval. Use Export Markdown from the report view.
+with CRM and GA4 CSV files, then view the report and audit tabs. The generated action-sheet ID is
+retained when you sign out; sign in as Admin and the report reloads so you can approve or reject
+the pending document approval. You can also load any RLS-visible report by action-sheet ID. Use
+Export Markdown from the report view.
 CRM and GA4 CSV uploads are capped at 2 MB each.
 
 The browser loads Supabase runtime config from `/api/config`; no `VITE_*` Supabase values are
@@ -70,6 +72,9 @@ make dev
 make health
 ```
 
+The RLS suite refuses to mutate a non-local Supabase project unless
+`RUN_REMOTE_RLS_TESTS=1` is also set explicitly.
+
 `make dev` starts `mira_agent.main:app` on port `8123`. Health endpoints:
 
 ```bash
@@ -89,11 +94,15 @@ curl -fsS http://localhost:8123/api/config
 - `GET /api/runs/{run_id}/audit`
 - `POST /api/action-sheets/{action_sheet_id}/approvals/{recommendation_id}`
 
-All report, audit, media-plan, analyze, and approval request paths use the Supabase user JWT with
-the anon key. The service-role key is restricted to migrations, seed scripts, and tests.
+All report and audit reads plus route-level organization authorization use the Supabase user JWT
+with the anon key so RLS applies. Generated campaign, run, action-sheet, approval, and audit writes
+use the backend-only service-role key after user-JWT authorization. The service-role key is never
+returned by `/api/config` or exposed to the browser.
 
 ## Azure Smoke
 
-Build the one-image app and deploy it to Azure Container Apps with runtime env vars and
-`secretref:` values. See `ops/azure/README.md` for commands and the smoke checklist covering
-health, DB health, UI login, media-plan submission, report, audit, approval, and Markdown export.
+Build the one-image app with `.github/workflows/build-acr-image.yml`, then deploy it to Azure
+Container Apps with runtime env vars and `secretref:` values. The workflow uses GitHub OIDC and a
+least-privilege Azure identity, not stored registry credentials. See `ops/azure/README.md` for
+commands and the smoke checklist covering health, DB health, UI login, media-plan submission,
+report, audit, approval, and Markdown export.

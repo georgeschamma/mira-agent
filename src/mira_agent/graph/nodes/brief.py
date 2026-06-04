@@ -50,7 +50,11 @@ async def brief_node(state: MiraMediaPlanState, context: MiraContext) -> MiraMed
         "channel_summaries": [],
         "allocations": [],
         "errors": [],
-        "warnings": [],
+        "warnings": (
+            []
+            if parsed.budget > 0
+            else ["No explicit budget found; using current GA4 spend as the allocation baseline."]
+        ),
         "crm_warnings": [],
         "ga4_warnings": [],
         "model_used": context.settings.llm_model,
@@ -63,10 +67,10 @@ def parse_media_plan_brief(*, org_id: str, brief: str) -> ParsedMediaBrief:
     audience = _field_value(brief, "audience") or _field_value(brief, "target") or "target audience"
     channels_raw = _field_value(brief, "channels") or _field_value(brief, "channel") or "paid media"
     goal = _field_value(brief, "goal") or _field_value(brief, "objective") or "improve performance"
-    budget_raw = _field_value(brief, "budget") or brief
+    budget_raw = _field_value(brief, "budget")
 
     channels = [item.strip() for item in re.split(r"[,/]", channels_raw) if item.strip()]
-    budget_match = re.search(r"(\d[\d,]*)", budget_raw)
+    budget_match = re.search(r"(\d[\d,]*)", budget_raw) if budget_raw else _budget_in_prose(brief)
     budget = int(budget_match.group(1).replace(",", "")) if budget_match else 0
 
     return ParsedMediaBrief(
@@ -84,3 +88,11 @@ def _field_value(text: str, field_name: str) -> str | None:
     pattern = re.compile(rf"^{field_name}\s*:\s*(.+)$", re.IGNORECASE | re.MULTILINE)
     match = pattern.search(text)
     return match.group(1).strip() if match else None
+
+
+def _budget_in_prose(text: str) -> re.Match[str] | None:
+    return re.search(
+        r"\bbudget\b(?:\s+is|\s+of|\s+at)?\s*[:=-]?\s*\$?\s*(\d[\d,]*)",
+        text,
+        re.IGNORECASE,
+    )

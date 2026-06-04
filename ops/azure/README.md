@@ -29,6 +29,32 @@ export SUPABASE_URL="https://replace-with-project.supabase.co"
 
 ## Build and Push
 
+The preferred path is the GitHub Actions workflow at
+`.github/workflows/build-acr-image.yml`. It builds on an Ubuntu runner, targets `linux/amd64`, and
+uses GitHub OIDC with the `mira-agent-github-acr-push` managed identity. That identity has only the
+`AcrPush` role on `miraphase2ocxng`; no registry password or Azure client secret is stored in
+GitHub.
+
+Pushing `main` triggers the workflow. Use `workflow_dispatch` to build another selected branch. It
+publishes:
+
+```text
+miraphase2ocxng.azurecr.io/mira-agent:phase-3-<short-git-sha>-amd64
+```
+
+Verify the tag before changing application or database permissions:
+
+```bash
+az acr repository show-tags \
+  --name "$ACR_NAME" \
+  --repository mira-agent \
+  --orderby time_desc \
+  --top 10 \
+  -o tsv
+```
+
+For a local fallback:
+
 ```bash
 az group create --name "$RG" --location "$LOCATION"
 az acr create --resource-group "$RG" --name "$ACR_NAME" --sku Basic
@@ -66,6 +92,7 @@ az containerapp create \
   --registry-server "$ACR_NAME.azurecr.io" \
   --secrets \
     supabase-anon-key="<SUPABASE_ANON_KEY>" \
+    supabase-service-role-key="<SUPABASE_SERVICE_ROLE_KEY>" \
     llm-api-key="<LLM_API_KEY>" \
     exa-api-key="<EXA_API_KEY>" \
   --env-vars \
@@ -74,6 +101,7 @@ az containerapp create \
     CORS_ORIGINS="https://$APP_NAME.<replace-with-aca-domain>" \
     SUPABASE_URL="$SUPABASE_URL" \
     SUPABASE_ANON_KEY=secretref:supabase-anon-key \
+    SUPABASE_SERVICE_ROLE_KEY=secretref:supabase-service-role-key \
     LLM_PROVIDER=openai-compatible \
     LLM_MODEL=gpt-5.5 \
     LLM_BASE_URL=https://api.freemodel.dev/v1 \
@@ -82,8 +110,9 @@ az containerapp create \
     EXA_NUM_RESULTS=5
 ```
 
-`SUPABASE_SERVICE_ROLE_KEY` is not used on request paths. Keep it out of the running app unless
-you need one-off seed/admin commands, and use `secretref:` if you add it as an env var.
+`SUPABASE_SERVICE_ROLE_KEY` is required by FastAPI for trusted generated writes after user-JWT
+authorization. Keep it backend-only, store it as an Azure `secretref:`, and never expose it through
+`/api/config`, browser code, logs, or client requests.
 
 ## Update Existing App
 
@@ -95,6 +124,7 @@ az containerapp update \
   --set-env-vars \
     SUPABASE_URL="$SUPABASE_URL" \
     SUPABASE_ANON_KEY=secretref:supabase-anon-key \
+    SUPABASE_SERVICE_ROLE_KEY=secretref:supabase-service-role-key \
     LLM_API_KEY=secretref:llm-api-key \
     EXA_API_KEY=secretref:exa-api-key
 ```

@@ -260,6 +260,16 @@ textarea:focus {
   justify-content: flex-end;
 }
 
+.report-loader {
+  align-items: end;
+  border-bottom: 1px solid #e5e9e4;
+  display: grid;
+  gap: 8px;
+  grid-template-columns: minmax(0, 1fr) auto;
+  margin-bottom: 14px;
+  padding-bottom: 14px;
+}
+
 .status-pill,
 .badge {
   border-radius: 999px;
@@ -452,7 +462,8 @@ textarea:focus {
   }
 
   .workspace,
-  .brief-grid {
+  .brief-grid,
+  .report-loader {
     grid-template-columns: 1fr;
   }
 

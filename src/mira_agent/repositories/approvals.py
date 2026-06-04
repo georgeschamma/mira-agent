@@ -34,16 +34,14 @@ async def update_approval_status(
     user: CurrentUser,
 ) -> ApprovalResponse:
     try:
-        rows = await client.update(
-            "action_sheet_approvals",
+        rows = await client.rpc(
+            "update_action_sheet_approval",
             {
-                "status": status,
-                "approved_by": user.id,
-                "approved_at": datetime.now(UTC).isoformat(),
-            },
-            filters={
-                "action_sheet_id": f"eq.{action_sheet_id}",
-                "recommendation_id": f"eq.{recommendation_id}",
+                "target_action_sheet_id": action_sheet_id,
+                "target_recommendation_id": recommendation_id,
+                "target_status": status,
+                "target_approved_by": user.id,
+                "target_approved_at": datetime.now(UTC).isoformat(),
             },
         )
     except PostgrestError as exc:
@@ -58,4 +56,3 @@ async def update_approval_status(
         recommendation_id=str(row["recommendation_id"]),
         status=row["status"],
     )
-

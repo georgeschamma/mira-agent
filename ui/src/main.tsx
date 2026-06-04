@@ -55,6 +55,7 @@ function App() {
   const [activeTab, setActiveTab] = useState<ActiveTab>("report");
   const [report, setReport] = useState<ActionSheetReportResponse | null>(null);
   const [audit, setAudit] = useState<AuditTraceResponse | null>(null);
+  const [actionSheetId, setActionSheetId] = useState("");
   const [message, setMessage] = useState("");
   const [approvalBusyId, setApprovalBusyId] = useState<string | null>(null);
 
@@ -118,6 +119,9 @@ function App() {
       return;
     }
     setSession(data.session);
+    if (data.session && actionSheetId.trim()) {
+      void loadReportById(data.session.access_token, actionSheetId);
+    }
   }
 
   async function signOut() {
@@ -154,6 +158,7 @@ function App() {
         crmCsv: crmFile,
         ga4Csv: ga4File,
       });
+      setActionSheetId(analysis.action_sheet_id);
       const [nextReport, nextAudit] = await Promise.all([
         getActionSheet(session.access_token, analysis.action_sheet_id),
         getAuditTrace(session.access_token, analysis.run_id),
@@ -165,6 +170,40 @@ function App() {
     } catch (error) {
       setRunState("error");
       setMessage(error instanceof Error ? error.message : "Media plan failed.");
+    }
+  }
+
+  async function loadReport(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!session?.access_token) {
+      setMessage("Sign in before loading a report.");
+      return;
+    }
+    await loadReportById(session.access_token, actionSheetId);
+  }
+
+  async function loadReportById(token: string, rawActionSheetId: string) {
+    const id = rawActionSheetId.trim();
+    if (!id) {
+      setMessage("Enter an action sheet ID.");
+      return;
+    }
+
+    setRunState("loading");
+    setMessage("");
+    setReport(null);
+    setAudit(null);
+    try {
+      const nextReport = await getActionSheet(token, id);
+      const nextAudit = await getAuditTrace(token, nextReport.run_id);
+      setActionSheetId(id);
+      setReport(nextReport);
+      setAudit(nextAudit);
+      setActiveTab("report");
+      setRunState("success");
+    } catch (error) {
+      setRunState("error");
+      setMessage(error instanceof Error ? error.message : "Report load failed.");
     }
   }
 
@@ -375,6 +414,18 @@ function App() {
                 </button>
               </div>
             </div>
+            <form className="report-loader" onSubmit={(event) => void loadReport(event)}>
+              <label>
+                Action sheet ID
+                <input
+                  value={actionSheetId}
+                  onChange={(event) => setActionSheetId(event.target.value)}
+                />
+              </label>
+              <button className="secondary-button" disabled={runState === "loading"} type="submit">
+                Load report
+              </button>
+            </form>
 
             {!report ? (
               <div className="empty-state">

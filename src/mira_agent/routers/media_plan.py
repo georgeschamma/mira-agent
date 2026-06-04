@@ -4,7 +4,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, File, Form, UploadFile
 
-from mira_agent.dependencies import get_rls_client, require_org_role, require_user
+from mira_agent.dependencies import get_rls_client, get_write_client, require_org_role, require_user
 from mira_agent.exceptions import ApiError
 from mira_agent.graph.graph import run_media_plan_analysis
 from mira_agent.repositories.rls_client import RlsClient
@@ -17,12 +17,14 @@ UPLOAD_READ_CHUNK_BYTES = 64 * 1024
 
 UserDep = Annotated[CurrentUser, Depends(require_user)]
 RlsClientDep = Annotated[RlsClient, Depends(get_rls_client)]
+WriteClientDep = Annotated[RlsClient, Depends(get_write_client)]
 
 
 @router.post("/media-plan", response_model=MediaPlanResponse)
 async def create_media_plan(
     user: UserDep,
     client: RlsClientDep,
+    write_client: WriteClientDep,
     org_id: Annotated[str, Form()],
     brief: Annotated[str, Form()],
     crm_csv: Annotated[UploadFile | None, File()] = None,
@@ -47,7 +49,7 @@ async def create_media_plan(
         ga4_csv_text=await _read_upload_text(ga4_csv, "GA4"),
         ga4_filename=ga4_csv.filename or "ga4.csv",
     )
-    return await run_media_plan_analysis(client=client, request=request, user=user)
+    return await run_media_plan_analysis(client=write_client, request=request, user=user)
 
 
 async def _read_upload_text(upload: UploadFile, label: str) -> str:

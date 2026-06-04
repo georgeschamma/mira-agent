@@ -39,6 +39,23 @@ def get_rls_client(
     )
 
 
+def get_write_client(
+    _user: Annotated[CurrentUser, Depends(require_user)],
+    settings: SettingsDep,
+) -> RlsClient:
+    if not settings.has_supabase_write_config:
+        raise ApiError(
+            "BACKEND_WRITE_NOT_CONFIGURED",
+            "Backend persistence is not configured.",
+            500,
+        )
+    return RlsClient(
+        postgrest_url=settings.postgrest_url,
+        anon_key=settings.supabase_service_role_key,
+        user_token=settings.supabase_service_role_key,
+    )
+
+
 async def require_org_role(
     *,
     client: RlsClient,

@@ -85,6 +85,12 @@ async def performance_node(state: MiraMediaPlanState, context: MiraContext) -> M
     )
     allocations = [*plan.allocations, *insufficient]
     confidence = "high" if curves and not insufficient else "medium" if curves else "low"
+    allocation_warnings = []
+    if plan.unallocated_budget > 0.01:
+        allocation_warnings.append(
+            f"{plan.unallocated_budget:,.0f} of the requested budget was left unallocated because "
+            "fitted channels reached supported spend caps."
+        )
 
     await write_audit_row(
         client=context.client,
@@ -92,7 +98,10 @@ async def performance_node(state: MiraMediaPlanState, context: MiraContext) -> M
         run_id=run_id,
         step_index=3,
         node="performance",
-        summary=f"Computed deterministic allocation for {len(curves)} fitted channel curves.",
+        summary=(
+            f"Computed deterministic allocation for {len(curves)} fitted channel curves"
+            f" with {plan.unallocated_budget:,.0f} unallocated."
+        ),
         source="performance:allocation",
         confidence=confidence,
         model_used="none",
@@ -101,7 +110,7 @@ async def performance_node(state: MiraMediaPlanState, context: MiraContext) -> M
     return {
         "channel_summaries": result.summaries,
         "allocations": allocations,
-        "warnings": [warning.message for warning in result.warnings],
+        "warnings": [warning.message for warning in result.warnings] + allocation_warnings,
         "ga4_warnings": result.warnings,
         "ga4_row_count": result.row_count,
         "errors": [],

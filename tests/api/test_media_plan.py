@@ -4,7 +4,7 @@ from typing import Any
 import pytest
 from fastapi.testclient import TestClient
 
-from mira_agent.dependencies import get_rls_client, require_user
+from mira_agent.dependencies import get_rls_client, get_write_client, require_user
 from mira_agent.main import app
 from mira_agent.schemas.auth import CurrentUser
 
@@ -70,6 +70,7 @@ def test_media_plan_requires_bearer_token() -> None:
 def test_media_plan_missing_csv_returns_stable_error() -> None:
     app.dependency_overrides[require_user] = fake_user
     app.dependency_overrides[get_rls_client] = lambda: FakeRlsClient()
+    app.dependency_overrides[get_write_client] = lambda: FakeRlsClient()
     client = TestClient(app)
 
     response = client.post("/api/media-plan", data=_data())
@@ -81,6 +82,7 @@ def test_media_plan_missing_csv_returns_stable_error() -> None:
 def test_media_plan_rejects_oversized_csv(monkeypatch: pytest.MonkeyPatch) -> None:
     app.dependency_overrides[require_user] = fake_user
     app.dependency_overrides[get_rls_client] = lambda: FakeRlsClient()
+    app.dependency_overrides[get_write_client] = lambda: FakeRlsClient()
     monkeypatch.setattr("mira_agent.routers.media_plan.MAX_CSV_UPLOAD_BYTES", 16)
     client = TestClient(app)
 
@@ -93,8 +95,11 @@ def test_media_plan_rejects_oversized_csv(monkeypatch: pytest.MonkeyPatch) -> No
 def test_media_plan_valid_multipart_returns_response_shape(monkeypatch: pytest.MonkeyPatch) -> None:
     app.dependency_overrides[require_user] = fake_user
     app.dependency_overrides[get_rls_client] = lambda: FakeRlsClient()
+    write_client = FakeRlsClient()
+    app.dependency_overrides[get_write_client] = lambda: write_client
 
     async def fake_run_media_plan_analysis(*, client, request, user):
+        assert client is write_client
         assert request.crm_filename == "crm.csv"
         assert request.ga4_filename == "ga4.csv"
         return {

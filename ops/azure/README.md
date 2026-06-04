@@ -18,11 +18,12 @@ Azure smoke test.
 
 ```bash
 export RG=mira-phase-2-rg
-export LOCATION=eastus
-export ACR_NAME=miraphase2acr
+export LOCATION=spaincentral
+export ACR_NAME=miraphase2ocxng
 export ACA_ENV=mira-phase-2-env
-export APP_NAME=mira-agent
-export IMAGE="$ACR_NAME.azurecr.io/mira-agent:phase-2"
+export APP_NAME=mira-agent-phase-2
+export IMAGE_TAG="phase-3-$(git rev-parse --short HEAD)-amd64"
+export IMAGE="$ACR_NAME.azurecr.io/mira-agent:$IMAGE_TAG"
 export SUPABASE_URL="https://replace-with-project.supabase.co"
 ```
 
@@ -33,9 +34,13 @@ az group create --name "$RG" --location "$LOCATION"
 az acr create --resource-group "$RG" --name "$ACR_NAME" --sku Basic
 az acr login --name "$ACR_NAME"
 
-docker build -t "$IMAGE" .
-docker push "$IMAGE"
+docker buildx build --platform linux/amd64 -t "$IMAGE" --push .
+docker buildx imagetools inspect "$IMAGE"
 ```
+
+Use the explicit `linux/amd64` target even when building on Apple Silicon. Azure Container Apps
+cannot start an ARM-only image. This subscription also blocks ACR Tasks, so use local `buildx`
+instead of `az acr build`.
 
 ## Create Environment
 

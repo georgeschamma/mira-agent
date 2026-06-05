@@ -1,7 +1,7 @@
 FROM node:22-alpine AS ui
 WORKDIR /app/ui
 COPY ui/package*.json ./
-RUN npm install
+RUN npm ci
 COPY ui/ ./
 RUN npm run build
 

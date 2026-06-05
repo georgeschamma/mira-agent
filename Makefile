@@ -43,4 +43,4 @@ build:
 	uv build
 
 docker:
-	docker build -t mira-agent:phase-2 .
+	docker build -t mira-agent:phase-3 .

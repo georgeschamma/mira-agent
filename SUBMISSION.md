@@ -101,8 +101,8 @@ flowchart LR
 | Local Supabase migration reset | passed |
 | Local and hosted real-JWT security test | passed |
 | Hosted Supabase migration | `202606040001_secure_backend_writes.sql` applied |
-| Azure image | `miraphase2ocxng.azurecr.io/mira-agent:phase-3-e74216c-amd64` |
-| Azure ready revision | `mira-agent-phase-2--0000006` |
+| Azure image | `miraphase2ocxng.azurecr.io/mira-agent:phase-3-41299ec-amd64` |
+| Azure ready revision | `mira-agent-phase-2--0000007` |
 | Live health and DB health | healthy |
 | Live end-to-end media-plan smoke | report, audit trace, and generated writes passed |
 | Tracked reviewer CSV live smoke | 12 CRM rows, 16 GA4 rows, saved report, exact audit order passed |

@@ -84,7 +84,7 @@ def _create_user(email: str) -> None:
             "email": email,
             "password": DEMO_PASSWORD,
             "email_confirm": True,
-            "user_metadata": {"source": "mira_phase_0_5"},
+            "user_metadata": {"source": "mira_demo_seed"},
         },
         timeout=10.0,
     )
@@ -128,7 +128,7 @@ def _update_user_password(user_id: str) -> None:
         json={
             "password": DEMO_PASSWORD,
             "email_confirm": True,
-            "user_metadata": {"source": "mira_phase_0_5"},
+            "user_metadata": {"source": "mira_demo_seed"},
         },
         timeout=10.0,
     )

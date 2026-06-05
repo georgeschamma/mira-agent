@@ -15,7 +15,7 @@ export Markdown.
 
 Demo account passwords are supplied privately and are never committed to the repository.
 
-Current runtime graph: router -> Exa research -> PydanticAI content recommendations.
+Legacy `/api/analyze` graph: router -> Exa research -> PydanticAI content recommendations.
 
 Current Phase 3 runtime graph:
 

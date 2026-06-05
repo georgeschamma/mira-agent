@@ -6,6 +6,15 @@ sign in with Supabase, submit a free-text brief plus CRM and GA4 CSVs, run the L
 workflow, view the saved strategy document, inspect audit rows, approve the document as Admin, and
 export Markdown.
 
+## Live Submission
+
+- Live app: https://mira-agent-phase-2.orangestone-b32613df.spaincentral.azurecontainerapps.io/
+- Submission proof: [`SUBMISSION.md`](SUBMISSION.md)
+- Reviewer CSVs: [`samples/`](samples/)
+- Demo recording script: [`docs/demo-script.md`](docs/demo-script.md)
+
+Demo account passwords are supplied privately and are never committed to the repository.
+
 Current runtime graph: router -> Exa research -> PydanticAI content recommendations.
 
 Current Phase 3 runtime graph:
@@ -50,6 +59,9 @@ retained when you sign out; sign in as Admin and the report reloads so you can a
 the pending document approval. You can also load any RLS-visible report by action-sheet ID. Use
 Export Markdown from the report view.
 CRM and GA4 CSV uploads are capped at 2 MB each.
+
+For a repeatable reviewer run, use `samples/crm-demo.csv`, `samples/ga4-demo.csv`, and the brief in
+`samples/README.md`.
 
 The browser loads Supabase runtime config from `/api/config`; no `VITE_*` Supabase values are
 required for Docker or Azure.

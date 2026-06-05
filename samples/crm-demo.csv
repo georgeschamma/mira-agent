@@ -1,0 +1,13 @@
+email,company,lifecycle_stage,industry,company_size,region
+ava@northstar.example,Northstar Labs,lead,SaaS,51-200,North America
+liam@brightpath.example,BrightPath Systems,lead,SaaS,201-500,Europe
+maya@harborview.example,Harborview Digital,marketing_qualified_lead,Services,51-200,North America
+noah@apexbridge.example,ApexBridge,customer,SaaS,201-500,Middle East
+zoe@cobaltworks.example,Cobalt Works,lead,Manufacturing,501-1000,Europe
+ethan@orbitline.example,Orbitline,marketing_qualified_lead,SaaS,51-200,Asia Pacific
+isla@clearfield.example,Clearfield Partners,customer,Services,201-500,Middle East
+leo@novaridge.example,Nova Ridge,lead,SaaS,11-50,North America
+mia@stonegate.example,Stonegate Analytics,marketing_qualified_lead,Services,51-200,Europe
+oliver@vertexlane.example,Vertex Lane,customer,SaaS,501-1000,Asia Pacific
+sophia@focalpoint.example,FocalPoint,lead,Services,201-500,Middle East
+lucas@evercrest.example,Evercrest,marketing_qualified_lead,SaaS,51-200,North America

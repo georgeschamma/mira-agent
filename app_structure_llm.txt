@@ -90,6 +90,9 @@ Browser UI flow:
   stacking.
 
 Important folders:
+- SUBMISSION.md: one-page reviewer proof with live path, architecture, evidence, and limitations.
+- docs/demo-script.md: timed 2-to-3-minute submission demo recording script.
+- samples: tracked synthetic CRM and GA4 CSV files plus repeatable reviewer brief.
 - src/mira_agent/routers: FastAPI route modules.
 - src/mira_agent/graph: LangGraph state, context, graph builder, and nodes.
 - src/mira_agent/integrations: Exa, LLM provider, GA4 CSV, and CRM CSV wrappers/parsers.
@@ -99,7 +102,7 @@ Important folders:
 - src/mira_agent/schemas: Pydantic request/response models.
 - supabase/migrations: SQL schema and RLS policies, including document fields on action_sheets.
 - scripts: repeatable local demo user/org setup.
-- tests/unit: fake-client graph, content, Exa, and report repository tests.
+- tests/unit: fake-client graph, content, Exa, report repository, and reviewer sample contract tests.
 - tests/api: cheap API/auth/health/report tests.
 - tests/integration: real-JWT Supabase RLS tests.
 - ui: Vite product UI served by FastAPI after build.

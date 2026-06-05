@@ -24,8 +24,8 @@ Project-local rules for the generated MIRA app. These rules apply inside `mira-a
 
 ### Current shipped app
 
-- This app is Phase 2: a visible thin product slice over the Phase 1 FastAPI, Supabase Auth/RLS,
-  and real analysis workflow.
+- This app is the live Phase 3 media-plan product, with the Phase 2 analysis route retained as a
+  regression baseline.
 - `/api/analyze` still runs the narrow sequential LangGraph shell: router -> Exa research ->
   PydanticAI content recommendations.
 - The browser app signs in with Supabase email/password, submits a brief, reads the persisted
@@ -144,4 +144,5 @@ src/mira_agent/
 - Azure docs must use placeholders and `secretref:` for secrets.
 - GitHub Actions Azure authentication must use OIDC with least-privilege Azure roles. Do not add
   registry passwords or Azure client secrets to repository configuration.
+- Reviewer samples must use synthetic data only. Never commit real CRM contacts or demo passwords.
 - Update `app_structure_llm.txt` when routes, folders, infrastructure, or data flow change.

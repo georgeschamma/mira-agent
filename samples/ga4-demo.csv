@@ -1,0 +1,17 @@
+date,source,medium,channel,cost,conversions,total_revenue
+2026-05-01,google,cpc,Paid Search,50,2,200
+2026-05-02,google,cpc,Paid Search,75,3,300
+2026-05-03,google,cpc,Paid Search,100,4,390
+2026-05-04,google,cpc,Paid Search,125,5,470
+2026-05-05,google,cpc,Paid Search,150,6,540
+2026-05-06,google,cpc,Paid Search,175,7,600
+2026-05-07,google,cpc,Paid Search,200,8,650
+2026-05-08,google,cpc,Paid Search,225,8,680
+2026-05-01,linkedin,paid,Paid Social,40,1,120
+2026-05-02,linkedin,paid,Paid Social,60,2,180
+2026-05-03,linkedin,paid,Paid Social,80,3,250
+2026-05-04,linkedin,paid,Paid Social,100,4,310
+2026-05-05,linkedin,paid,Paid Social,120,5,360
+2026-05-06,linkedin,paid,Paid Social,140,5,390
+2026-05-07,linkedin,paid,Paid Social,160,6,420
+2026-05-08,linkedin,paid,Paid Social,180,6,430

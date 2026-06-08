@@ -21,54 +21,7 @@ Python logic in `src/mira_agent/services/mmm.py`.
 
 ## Architecture
 
-```mermaid
-flowchart LR
-    Browser["User Browser<br/>React + Vite UI"]
-    Auth["Supabase Auth<br/>JWT"]
-
-    subgraph App["FastAPI App - One Docker Image"]
-        FastAPI["FastAPI<br/>API + Static UI Host"]
-        subgraph Graph["LangGraph Agent Workflow"]
-            Brief["Brief Agent"]
-            Research["Research Agent<br/>Exa"]
-            Audience["Audience Agent<br/>CRM CSV"]
-            Performance["Performance Agent<br/>GA4 CSV + Deterministic Math"]
-            Strategy["Strategy Agent<br/>Sourced Narrative"]
-            Brief --> Research
-            Brief --> Audience
-            Brief --> Performance
-            Research --> Strategy
-            Audience --> Strategy
-            Performance --> Strategy
-        end
-        FastAPI --> Brief
-    end
-
-    subgraph Supabase["Supabase"]
-        RLS["Postgres + Row Level Security"]
-        Audit["audit_log"]
-        Approval["action_sheet_approvals"]
-    end
-
-    Exa["Exa"]
-    LLM["LLM via PydanticAI"]
-
-    Browser -->|"1. Login"| Auth
-    Auth -->|"2. JWT"| Browser
-    Browser -->|"3. Bearer JWT + inputs"| FastAPI
-    FastAPI -->|"User-JWT reads + authorization"| RLS
-    FastAPI -->|"Backend-only generated writes"| RLS
-    FastAPI -->|"Admin approval RPC"| Approval
-    Research --> Exa
-    Strategy --> LLM
-    Brief --> Audit
-    Research --> Audit
-    Audience --> Audit
-    Performance --> Audit
-    Strategy --> Audit
-    RLS --- Audit
-    RLS --- Approval
-```
+![MIRA architecture diagram](docs/assets/mira-architecture.png)
 
 Legacy `/api/analyze` graph: router -> Exa research -> PydanticAI content recommendations.
 

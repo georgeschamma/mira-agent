@@ -115,7 +115,7 @@ flowchart LR
 | Live health and DB health | healthy |
 | Live end-to-end media-plan smoke | report, audit trace, and generated writes passed |
 | Tracked reviewer CSV live smoke | 12 CRM rows, 16 GA4 rows, saved report, exact audit order passed |
-| Live 7-step media-plan smoke | `brief`, `research`, `audience`, `performance`, `synthesize`, `strategy`, `critic`; critic passed plan validation on June 11, 2026 |
+| Live 7-step media-plan smoke | `brief`, `research`, `audience`, `performance`, `synthesize`, `strategy`, `critic`; critic passed plan validation on June 11, 2026. Evidence: [`evidence/azure-smoke-20260611-194437.summary.json`](evidence/azure-smoke-20260611-194437.summary.json), [`evidence/azure-smoke-20260611-194437.md`](evidence/azure-smoke-20260611-194437.md) |
 | Live authorization smoke | direct-write denial, tenant isolation, Analyst denial, Admin approval passed |
 
 ## Honest Limitations

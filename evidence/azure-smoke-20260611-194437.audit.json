@@ -1,0 +1,96 @@
+{
+  "rows": [
+    {
+      "campaign_id": "4dd7df1e-d73a-4f72-b24d-7b59b8ba8afb",
+      "confidence": "medium",
+      "created_at": "2026-06-11T19:42:43.575474+00:00",
+      "id": "004fa045-7473-4ce5-ba3b-33391c1f1a52",
+      "model_used": "none",
+      "node": "brief",
+      "pii_accessed": false,
+      "run_id": "c105ddb8-50ff-4db3-a4be-ee32947ebe75",
+      "source": "brief:raw",
+      "step_index": 0,
+      "summary": "Free-text brief parsed and media-plan run started."
+    },
+    {
+      "campaign_id": "4dd7df1e-d73a-4f72-b24d-7b59b8ba8afb",
+      "confidence": "medium",
+      "created_at": "2026-06-11T19:42:44.303162+00:00",
+      "id": "323644c7-e74a-4231-a430-4e5edcadeadd",
+      "model_used": "none",
+      "node": "research",
+      "pii_accessed": false,
+      "run_id": "c105ddb8-50ff-4db3-a4be-ee32947ebe75",
+      "source": "https://www.brandbearmarketing.com/post/what-is-a-good-cost-per-lead-b2b-benchmarks-by-industry",
+      "step_index": 1,
+      "summary": "Found 5 sourced market signals."
+    },
+    {
+      "campaign_id": "4dd7df1e-d73a-4f72-b24d-7b59b8ba8afb",
+      "confidence": "medium",
+      "created_at": "2026-06-11T19:42:44.149088+00:00",
+      "id": "ef8c3994-1094-4c58-962b-135a639253ea",
+      "model_used": "none",
+      "node": "audience",
+      "pii_accessed": true,
+      "run_id": "c105ddb8-50ff-4db3-a4be-ee32947ebe75",
+      "source": "crm:segment:lifecycle_stage",
+      "step_index": 2,
+      "summary": "Parsed 14 aggregate CRM audience segments."
+    },
+    {
+      "campaign_id": "4dd7df1e-d73a-4f72-b24d-7b59b8ba8afb",
+      "confidence": "high",
+      "created_at": "2026-06-11T19:42:43.80344+00:00",
+      "id": "68a3bba0-1c8f-4a1d-ba63-752edddb0491",
+      "model_used": "none",
+      "node": "performance",
+      "pii_accessed": false,
+      "run_id": "c105ddb8-50ff-4db3-a4be-ee32947ebe75",
+      "source": "performance:allocation",
+      "step_index": 3,
+      "summary": "Computed deterministic allocation for 2 fitted channel curves with 8,260 unallocated."
+    },
+    {
+      "campaign_id": "4dd7df1e-d73a-4f72-b24d-7b59b8ba8afb",
+      "confidence": "high",
+      "created_at": "2026-06-11T19:44:15.980428+00:00",
+      "id": "688225b7-29da-4bcd-9a2d-d30bb877eb92",
+      "model_used": "gpt-5.5",
+      "node": "synthesize",
+      "pii_accessed": false,
+      "run_id": "c105ddb8-50ff-4db3-a4be-ee32947ebe75",
+      "source": "performance:allocation",
+      "step_index": 4,
+      "summary": "Merged research, audience, performance, and brief context into a strategic brief."
+    },
+    {
+      "campaign_id": "4dd7df1e-d73a-4f72-b24d-7b59b8ba8afb",
+      "confidence": "high",
+      "created_at": "2026-06-11T19:44:36.672397+00:00",
+      "id": "8fd2ac95-fb25-424e-8347-672408d994c3",
+      "model_used": "gpt-5.5",
+      "node": "strategy",
+      "pii_accessed": false,
+      "run_id": "c105ddb8-50ff-4db3-a4be-ee32947ebe75",
+      "source": "performance:allocation",
+      "step_index": 5,
+      "summary": "Created sourced media-plan document with deterministic budget table."
+    },
+    {
+      "campaign_id": "4dd7df1e-d73a-4f72-b24d-7b59b8ba8afb",
+      "confidence": "high",
+      "created_at": "2026-06-11T19:44:37.049009+00:00",
+      "id": "cc276be0-ae8d-4b5d-9221-cee6993c6ef2",
+      "model_used": "none",
+      "node": "critic",
+      "pii_accessed": false,
+      "run_id": "c105ddb8-50ff-4db3-a4be-ee32947ebe75",
+      "source": "performance:allocation",
+      "step_index": 6,
+      "summary": "Critic node passed plan validation."
+    }
+  ],
+  "run_id": "c105ddb8-50ff-4db3-a4be-ee32947ebe75"
+}

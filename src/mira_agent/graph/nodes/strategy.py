@@ -7,7 +7,7 @@ from pydantic import BaseModel, Field
 from pydantic_ai import Agent
 
 from mira_agent.graph.context import MiraContext
-from mira_agent.graph.state import MiraMediaPlanState, NodeError
+from mira_agent.graph.state import MiraMediaPlanState, NodeError, StrategicBrief
 from mira_agent.repositories.campaigns import finish_campaign_run, write_audit_row
 from mira_agent.repositories.media_plans import save_media_plan_document
 from mira_agent.schemas.media_plan import MediaPlanGraphRequest, SourceClaim
@@ -58,6 +58,9 @@ async def strategy_node(state: MiraMediaPlanState, context: MiraContext) -> Mira
         "warning_count": len(state.get("warnings", [])),
         "source_claims": [claim.model_dump() for claim in narrative.claims],
         "allocations": [allocation_to_dict(item) for item in state.get("allocations", [])],
+        "strategic_brief": (
+            state["strategic_brief"].model_dump() if state.get("strategic_brief") else None
+        ),
     }
 
     ids = await save_media_plan_document(
@@ -73,7 +76,7 @@ async def strategy_node(state: MiraMediaPlanState, context: MiraContext) -> Mira
         client=context.client,
         campaign_id=campaign_id,
         run_id=run_id,
-        step_index=4,
+        step_index=5,
         node="strategy",
         summary=(
             "Created sourced fallback media-plan document with deterministic budget table."
@@ -110,10 +113,12 @@ async def generate_strategy_narrative(
         output_type=StrategyNarrativeOutput,
         instructions=(
             "Write concise media-plan narrative sections. Budget numbers are fixed facts from "
-            "the prompt; explain them but do not invent or change them. If the brief lists "
-            "channels without GA4 performance data, treat them as narrative-only expansion "
-            "candidates outside the deterministic allocation table. Every claim source must "
-            "start with https://, brief:, crm:segment:, ga4:, or performance:."
+            "the prompt; explain them but do not invent or change them. Use the strategic "
+            "synthesis brief as the primary source for situation, audience, channel moves, "
+            "risks, and expansion candidates. If the brief lists channels without GA4 "
+            "performance data, treat them as narrative-only expansion candidates outside the "
+            "deterministic allocation table. Every claim source must start with https://, "
+            "brief:, crm:segment:, ga4:, or performance:."
         ),
         retries=1,
     )
@@ -147,6 +152,39 @@ def _strategy_fallback_used(state: MiraMediaPlanState) -> bool:
 
 
 def fallback_narrative(state: MiraMediaPlanState) -> StrategyNarrativeOutput:
+    strategic_brief = state.get("strategic_brief")
+    if strategic_brief:
+        return StrategyNarrativeOutput(
+            executive_summary=strategic_brief.situation_summary,
+            audience_strategy=_fallback_list(
+                strategic_brief.audience_priorities,
+                "Prioritize aggregate CRM segments without exposing row-level PII.",
+            ),
+            channel_rationale=_fallback_list(
+                strategic_brief.channel_moves,
+                "Shift spend according to marginal ROI and saturation status.",
+            ),
+            expansion_opportunities=_fallback_list(
+                strategic_brief.expansion_opportunities,
+                (
+                    "Treat brief-requested channels without GA4 history as narrative-only "
+                    "test candidates."
+                ),
+            ),
+            sequencing="Launch deterministic channel moves first, then review measured tests.",
+            risks=_fallback_list(
+                strategic_brief.key_risks,
+                "Channels with insufficient spend history are held or flagged for review.",
+            ),
+            claims=strategic_brief.source_claims
+            or [
+                SourceClaim(
+                    claim="Budget allocation comes from deterministic performance math.",
+                    source="performance:allocation",
+                )
+            ],
+        )
+
     first_segment = (
         state.get("audience_segments", [])[0].reference
         if state.get("audience_segments")
@@ -310,6 +348,7 @@ def validate_source_claims(claims: list[SourceClaim]) -> None:
 def _strategy_prompt(*, state: MiraMediaPlanState, budget_table: str) -> str:
     brief = state["parsed_brief"]
     budget_context = render_budget_context(state)
+    strategic_brief = state.get("strategic_brief")
     missing_channels = channels_without_ga4_data(
         brief.channels, [item.channel for item in state.get("channel_summaries", [])]
     )
@@ -336,6 +375,8 @@ def _strategy_prompt(*, state: MiraMediaPlanState, budget_table: str) -> str:
         f"- Budget: {_money(brief.budget) if brief.budget > 0 else 'not provided'}\n\n"
         "Budget context:\n"
         f"{budget_context}\n\n"
+        "Strategic synthesis brief:\n"
+        f"{_strategic_brief_block(strategic_brief)}\n\n"
         "Fixed budget table:\n"
         f"{budget_table}\n\n"
         "Research signals:\n"
@@ -350,6 +391,41 @@ def _strategy_prompt(*, state: MiraMediaPlanState, budget_table: str) -> str:
         "Do not add expansion candidates to the deterministic allocation table; discuss them "
         "as qualitative tests until GA4 spend history exists."
     )
+
+
+def _strategic_brief_block(strategic_brief: StrategicBrief | None) -> str:
+    if strategic_brief is None:
+        return "- none"
+    return "\n".join(
+        [
+            f"- Situation: {strategic_brief.situation_summary}",
+            f"- Saturation diagnosis: {strategic_brief.saturation_diagnosis}",
+            "- Audience priorities:\n"
+            f"{_bullet_block(strategic_brief.audience_priorities)}",
+            "- Channel moves:\n"
+            f"{_bullet_block(strategic_brief.channel_moves)}",
+            "- Expansion opportunities:\n"
+            f"{_bullet_block(strategic_brief.expansion_opportunities)}",
+            "- Key risks:\n"
+            f"{_bullet_block(strategic_brief.key_risks)}",
+            "- Research insights:\n"
+            f"{_bullet_block(strategic_brief.research_insights)}",
+            "- Synthesis sources:\n"
+            f"{_source_claim_block(strategic_brief.source_claims)}",
+        ]
+    )
+
+
+def _bullet_block(items: list[str]) -> str:
+    return "\n".join(f"  - {item}" for item in items) if items else "  - none"
+
+
+def _source_claim_block(claims: list[SourceClaim]) -> str:
+    return "\n".join(f"  - {claim.claim} ({claim.source})" for claim in claims) or "  - none"
+
+
+def _fallback_list(items: list[str], fallback: str) -> str:
+    return " ".join(items) if items else fallback
 
 
 def channels_without_ga4_data(brief_channels: list[str], ga4_channels: list[str]) -> list[str]:

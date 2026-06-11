@@ -41,13 +41,15 @@ flowchart LR
             Research["Research Agent<br/>Exa"]
             Audience["Audience Agent<br/>CRM CSV"]
             Performance["Performance Agent<br/>GA4 CSV + Deterministic Math"]
+            Synthesize["Synthesis Step<br/>Typed Strategic Brief"]
             Strategy["Strategy Agent<br/>Sourced Narrative"]
             Brief --> Research
             Brief --> Audience
             Brief --> Performance
-            Research --> Strategy
-            Audience --> Strategy
-            Performance --> Strategy
+            Research --> Synthesize
+            Audience --> Synthesize
+            Performance --> Synthesize
+            Synthesize --> Strategy
         end
         FastAPI --> Brief
     end
@@ -73,6 +75,7 @@ flowchart LR
     Research --> Audit
     Audience --> Audit
     Performance --> Audit
+    Synthesize --> Audit
     Strategy --> Audit
     RLS --- Audit
     RLS --- Approval

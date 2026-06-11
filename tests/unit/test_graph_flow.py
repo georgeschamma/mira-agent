@@ -148,6 +148,7 @@ async def test_run_media_plan_analysis_writes_phase_3_audit_and_document() -> No
             "executive_summary": "Use fixed allocation math.",
             "audience_strategy": "Target leads.",
             "channel_rationale": "Review sparse channel history.",
+            "expansion_opportunities": "Discuss missing channels as narrative-only tests.",
             "sequencing": "Launch after approval.",
             "risks": "Sparse data is flagged.",
             "claims": [
@@ -194,5 +195,12 @@ async def test_run_media_plan_analysis_writes_phase_3_audit_and_document() -> No
 
     assert response.document_markdown.startswith("# Media Plan")
     assert response.approval_id
-    assert audit_nodes_by_step == ["brief", "research", "audience", "performance", "strategy"]
+    assert audit_nodes_by_step == [
+        "brief",
+        "research",
+        "audience",
+        "performance",
+        "synthesize",
+        "strategy",
+    ]
     assert sheet_rows[-1]["document_status"] == "pending"

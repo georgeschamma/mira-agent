@@ -8,7 +8,7 @@ Project-local rules for the generated MIRA app. These rules apply inside `mira-a
 
 - MIRA's active product direction is now a media-plan agent:
   free-text brief + CRM CSV + GA4 CSV -> brief -> parallel research/audience/performance ->
-  strategy document.
+  synthesize -> strategy document.
 - Phase 3 implementation must work from an approved `.agents/plans/phase-3-*` plan.
 - CRM and GA4 are in scope for approved Phase 3 work, but raw CSV contents must not be logged,
   exposed, or persisted unless a migration/RLS plan explicitly allows it.
@@ -19,8 +19,8 @@ Project-local rules for the generated MIRA app. These rules apply inside `mira-a
   audit, and approval behavior stable until retirement is explicit.
 - Phase 3 runtime route is `POST /api/media-plan` with multipart fields `org_id`, `brief`,
   `crm_csv`, and `ga4_csv`; CRM and GA4 CSV uploads are capped at 2 MB each.
-- Phase 3 graph is `brief -> research + audience + performance -> strategy`; do not revive the
-  old analytics/creative/media/validation/content graph.
+- Phase 3 graph is `brief -> research + audience + performance -> synthesize -> strategy`; do
+  not revive the old analytics/creative/media/validation/content graph.
 
 ### Current shipped app
 

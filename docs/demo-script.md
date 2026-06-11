@@ -43,7 +43,7 @@ Say:
 > Every agent writes an audit row with its source, confidence, model, and step index. CRM output is
 > aggregate only, and the uploaded raw rows are not persisted.
 
-Show the fixed order: `brief`, `research`, `audience`, `performance`, `strategy`.
+Show the fixed order: `brief`, `research`, `audience`, `performance`, `synthesize`, `strategy`.
 
 ## 1:45-2:20 - Human Approval
 

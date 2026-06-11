@@ -15,6 +15,7 @@ from mira_agent.graph.nodes.performance import performance_node
 from mira_agent.graph.nodes.research import research_node
 from mira_agent.graph.nodes.router import router_node
 from mira_agent.graph.nodes.strategy import strategy_node
+from mira_agent.graph.nodes.synthesis import synthesize_node
 from mira_agent.graph.state import MiraMediaPlanState, MiraState
 from mira_agent.integrations.exa import ExaResearchClient, ResearchClient
 from mira_agent.integrations.llm import get_model
@@ -70,6 +71,9 @@ def build_media_plan_graph(context: MiraContext):
     async def performance(state: MiraMediaPlanState) -> MiraMediaPlanState:
         return await performance_node(state, context)
 
+    async def synthesize(state: MiraMediaPlanState) -> MiraMediaPlanState:
+        return await synthesize_node(state, context)
+
     async def strategy(state: MiraMediaPlanState) -> MiraMediaPlanState:
         return await strategy_node(state, context)
 
@@ -77,14 +81,16 @@ def build_media_plan_graph(context: MiraContext):
     builder.add_node("research", research)
     builder.add_node("audience", audience)
     builder.add_node("performance", performance)
+    builder.add_node("synthesize", synthesize)
     builder.add_node("strategy", strategy)
     builder.add_edge(START, "brief")
     builder.add_edge("brief", "research")
     builder.add_edge("brief", "audience")
     builder.add_edge("brief", "performance")
-    builder.add_edge("research", "strategy")
-    builder.add_edge("audience", "strategy")
-    builder.add_edge("performance", "strategy")
+    builder.add_edge("research", "synthesize")
+    builder.add_edge("audience", "synthesize")
+    builder.add_edge("performance", "synthesize")
+    builder.add_edge("synthesize", "strategy")
     builder.add_edge("strategy", END)
     return builder.compile()
 

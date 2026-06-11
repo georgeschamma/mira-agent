@@ -14,7 +14,7 @@ from mira_agent.graph.nodes.strategy import (
     strategy_node,
     validate_source_claims,
 )
-from mira_agent.graph.state import ParsedMediaBrief, ResearchFinding
+from mira_agent.graph.state import ParsedMediaBrief, ResearchFinding, StrategicBrief
 from mira_agent.integrations.crm import AudienceSegment
 from mira_agent.integrations.ga4 import ChannelPerformanceSummary
 from mira_agent.schemas.auth import CurrentUser
@@ -308,6 +308,28 @@ def test_strategy_document_explains_constrained_budget_and_missing_ga4_channels(
             "supported spend caps.",
             "Invalid date 'x'; expected YYYY-MM-DD.",
         ],
+        "strategic_brief": StrategicBrief(
+            situation_summary="Brief budget is 1,000 versus current GA4 spend of 1,980.",
+            saturation_diagnosis=(
+                "Saturated fitted channels: Paid Search / google/cpc, "
+                "Paid Social / linkedin/paid."
+            ),
+            audience_priorities=["Lifecycle Stage: lead: 5 records"],
+            channel_moves=["Paid Search / google/cpc: 1,100 -> 560 (-540, saturated)."],
+            expansion_opportunities=[
+                "Meta: requested in the brief but missing from GA4; discuss as a test."
+            ],
+            key_risks=["No deterministic allocation is available for Meta and TikTok."],
+            research_insights=[
+                "Benchmark: Retargeting tests can support saturated search channels."
+            ],
+            source_claims=[
+                SourceClaim(
+                    claim="Budget moves come from deterministic allocation.",
+                    source="performance:allocation",
+                )
+            ],
+        ),
     }
     narrative = StrategyNarrativeOutput(
         executive_summary="Use the constrained budget as the baseline.",
@@ -343,6 +365,9 @@ def test_strategy_document_explains_constrained_budget_and_missing_ga4_channels(
     assert "Invalid date 'x'; expected YYYY-MM-DD." in document
     assert "Meta and TikTok are narrative-only expansion candidates" in document
     assert "| Meta |" not in document
+    assert "Strategic synthesis brief:" in prompt
+    assert "Brief budget is 1,000 versus current GA4 spend of 1,980." in prompt
+    assert "Paid Search / google/cpc: 1,100 -> 560" in prompt
     assert "Retargeting tests can support saturated search channels." in prompt
     assert "Expansion candidates outside the deterministic table:\nMeta, TikTok" in prompt
 

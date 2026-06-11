@@ -6,8 +6,9 @@ agent-by-agent audit trails, deterministic media-budget allocation, and Admin ap
 Dockerized application.
 
 The main workflow turns a free-text campaign brief, CRM CSV, and GA4 CSV into a sourced media-plan
-document. The LLM writes the strategy narrative; budget allocation numbers come from deterministic
-Python logic in `src/mira_agent/services/mmm.py`.
+document. A typed synthesis step merges the parallel findings before the LLM writes the strategy
+narrative; budget allocation numbers come from deterministic Python logic in
+`src/mira_agent/services/mmm.py`.
 
 ## What This Shows
 
@@ -15,7 +16,7 @@ Python logic in `src/mira_agent/services/mmm.py`.
 - User-JWT-bound RLS reads for reports, audits, organizations, and roles.
 - Backend-only trusted writes after route-level authorization.
 - Document-level Admin approval for generated strategy outputs.
-- Parallel agent workflow: `brief -> research + audience + performance -> strategy`.
+- Parallel agent workflow: `brief -> research + audience + performance -> synthesize -> strategy`.
 - Deterministic response-curve math for budget allocation, separate from LLM prose.
 - Synthetic reviewer CSVs in [`samples/`](samples/) for repeatable local demos.
 

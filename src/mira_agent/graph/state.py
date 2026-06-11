@@ -8,6 +8,7 @@ from pydantic import BaseModel, Field
 from mira_agent.integrations.crm import AudienceSegment
 from mira_agent.integrations.ga4 import ChannelPerformanceSummary, CsvParseWarning
 from mira_agent.schemas.analyze import Recommendation
+from mira_agent.schemas.media_plan import SourceClaim
 from mira_agent.services.mmm import ChannelAllocation
 
 
@@ -49,6 +50,17 @@ class ParsedMediaBrief(BaseModel):
     raw_brief: str
 
 
+class StrategicBrief(BaseModel):
+    situation_summary: str
+    saturation_diagnosis: str
+    audience_priorities: list[str] = Field(default_factory=list)
+    channel_moves: list[str] = Field(default_factory=list)
+    expansion_opportunities: list[str] = Field(default_factory=list)
+    key_risks: list[str] = Field(default_factory=list)
+    research_insights: list[str] = Field(default_factory=list)
+    source_claims: list[SourceClaim] = Field(default_factory=list)
+
+
 class MiraMediaPlanState(TypedDict):
     request: dict[str, Any]
     media_input: NotRequired[dict[str, Any]]
@@ -58,6 +70,7 @@ class MiraMediaPlanState(TypedDict):
     action_sheet_id: NotRequired[str]
     approval_id: NotRequired[str | None]
     parsed_brief: NotRequired[ParsedMediaBrief]
+    strategic_brief: NotRequired[StrategicBrief]
     findings: Annotated[list[ResearchFinding], operator.add]
     audience_segments: Annotated[list[AudienceSegment], operator.add]
     channel_summaries: Annotated[list[ChannelPerformanceSummary], operator.add]

@@ -244,6 +244,7 @@ def optimize_allocation(
     value_per_response: dict[str, float] | float = 1.0,
     floor_ratio: float = 0.5,
     cap_ratio: float = 2.0,
+    min_mroi: float = 0.05,
     steps: int = 1000,
 ) -> AllocationPlan:
     """Greedy water-filling: pour each increment into the steepest curve below its cap.
@@ -294,7 +295,7 @@ def optimize_allocation(
             if m > best_mroi:
                 best_mroi = m
                 best = c
-        if best is None or best_mroi <= 0.0:
+        if best is None or best_mroi < min_mroi:
             break
         alloc[best.channel] += increment
         remaining -= increment

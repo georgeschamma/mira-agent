@@ -146,7 +146,8 @@ Then open `$APP_URL` in a clean browser and verify:
 
 - Login works for the seeded Analyst user.
 - Submit a free-text brief with CRM and GA4 CSV uploads and receive a sourced media-plan document.
-- Audit trace shows `brief`, `research`, `audience`, `performance`, and `strategy` in order.
+- Audit trace shows `brief`, `research`, `audience`, `performance`, `synthesize`, and `strategy`
+  in order.
 - Markdown export downloads a non-empty media plan.
 - Analyst approval is rejected or hidden.
 - Admin can approve or reject the pending document approval.

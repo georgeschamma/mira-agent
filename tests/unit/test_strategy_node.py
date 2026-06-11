@@ -157,10 +157,6 @@ async def test_strategy_node_renders_fixed_budget_table_and_saves_document() -> 
     assert sheet_rows[0]["recommendations"] == []
     audit_nodes = [payload["node"] for table, payload in client.inserts if table == "audit_log"]
     assert "strategy" in audit_nodes
-    run_statuses = [
-        payload["status"] for table, payload, _filters in client.updates if table == "campaign_runs"
-    ]
-    assert run_statuses[-1] == "done"
 
 
 def test_validate_source_claims_rejects_plain_http_sources() -> None:
@@ -235,13 +231,9 @@ async def test_strategy_fallback_is_marked_partial_and_not_model_backed(
 
     audit = [payload for table, payload in client.inserts if table == "audit_log"][-1]
     sheet = [payload for table, payload in client.inserts if table == "action_sheets"][-1]
-    run_status = [
-        payload["status"] for table, payload, _filters in client.updates if table == "campaign_runs"
-    ][-1]
     assert audit["confidence"] == "low"
     assert audit["model_used"] == "deterministic-fallback"
     assert sheet["model_used"] == "deterministic-fallback"
-    assert run_status == "partial"
 
 
 def test_strategy_document_explains_constrained_budget_and_missing_ga4_channels() -> None:

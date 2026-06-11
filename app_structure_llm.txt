@@ -40,21 +40,22 @@ Phase 3 media-plan flow:
 - routers/media_plan.py verifies Supabase user and org role before bounded CSV upload reads, then
   builds a request-scoped MediaPlanGraphRequest.
 - graph/graph.py compiles the media-plan LangGraph:
-  START -> brief -> research/audience/performance in parallel -> synthesize -> strategy -> END.
+  START -> brief -> research/audience/performance in parallel -> synthesize -> strategy -> critic -> conditional retry / END.
 - graph/state.py defines MiraMediaPlanState with reducer-backed parallel list fields and a typed
   StrategicBrief synthesis artifact.
 - graph/nodes/brief.py parses free-text brief, creates campaign/campaign_run rows, and writes
   audit step 0.
-- graph/nodes/research.py is reused for Exa market signals and writes audit step 1.
-- graph/nodes/audience.py parses CRM CSV in memory, outputs aggregate segments only, marks
+- graph/nodes/research.py is reused for Exa market signals, runs structured extraction, and writes audit step 1.
+- graph/nodes/audience.py parses CRM CSV in memory, outputs aggregate segments and maps them to hints, marks
   pii_accessed=true, and writes audit step 2.
 - graph/nodes/performance.py parses GA4 CSV, calls services/mmm.py for deterministic allocation,
-  and writes audit step 3.
-- graph/nodes/synthesis.py merges parsed brief, research highlights, audience segments, budget
-  context, allocation rows, and missing-GA4 channels into StrategicBrief, then writes audit step 4.
-- graph/nodes/strategy.py renders the deterministic budget table in code, uses PydanticAI only
-  for sourced narrative, saves action_sheets.document_markdown/document_metadata/document_status,
+  applies services/allocation_policy.py layer, and writes audit step 3.
+- graph/nodes/synthesis.py merges parsed brief, research highlights, audience segments/hints, budget
+  context, allocation/policy rows, and missing-GA4 channels into StrategicBrief using PydanticAI, then writes audit step 4.
+- graph/nodes/strategy.py renders the deterministic budget table in code, uses PydanticAI for
+  sourced narrative guided by the StrategicBrief, saves action_sheets.document_markdown/document_metadata/document_status,
   creates recommendation_id=document approval, and writes audit step 5.
+- graph/nodes/critic.py validates plan consistency, triggers one retry if contradictions exist, writes audit step 6, and saves run status.
 
 Report/audit flow:
 - routers/reports.py requires a Supabase user and delegates to repositories/reports.py.

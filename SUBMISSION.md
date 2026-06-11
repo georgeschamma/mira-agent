@@ -43,6 +43,7 @@ flowchart LR
             Performance["Performance Agent<br/>GA4 CSV + Deterministic Math"]
             Synthesize["Synthesis Step<br/>Typed Strategic Brief"]
             Strategy["Strategy Agent<br/>Sourced Narrative"]
+            Critic["Critic Agent<br/>Validation Gate"]
             Brief --> Research
             Brief --> Audience
             Brief --> Performance
@@ -50,6 +51,8 @@ flowchart LR
             Audience --> Synthesize
             Performance --> Synthesize
             Synthesize --> Strategy
+            Strategy --> Critic
+            Critic -.->|Retry| Strategy
         end
         FastAPI --> Brief
     end
@@ -62,7 +65,7 @@ flowchart LR
 
     Exa["Exa"]
     LLM["LLM via PydanticAI"]
-
+ 
     Browser -->|"1. Login"| Auth
     Auth -->|"2. JWT"| Browser
     Browser -->|"3. Bearer JWT + inputs"| FastAPI
@@ -71,12 +74,14 @@ flowchart LR
     FastAPI -->|"Admin approval RPC"| Approval
     Research --> Exa
     Strategy --> LLM
+    Critic --> LLM
     Brief --> Audit
     Research --> Audit
     Audience --> Audit
     Performance --> Audit
     Synthesize --> Audit
     Strategy --> Audit
+    Critic --> Audit
     RLS --- Audit
     RLS --- Approval
 ```
@@ -98,7 +103,7 @@ flowchart LR
 
 | Evidence | Result |
 |---|---|
-| Backend compile, Ruff, unit, and API validation | `make validate`: 65 tests passed |
+| Backend compile, Ruff, unit, and API validation | `make validate`: 82 tests passed |
 | Production frontend build | `make ui-build`: passed |
 | Frontend dependency audit | `npm audit --omit=dev`: 0 vulnerabilities |
 | Local Supabase migration reset | passed |
@@ -111,10 +116,8 @@ flowchart LR
 
 ## Honest Limitations
 
-- The budget engine is a heuristic saturation-curve fit, not Bayesian MMM or causal attribution.
+- The budget engine is a heuristic saturation-curve fit, and the allocation policy layer is a deterministic B2B rules layer (not causal Bayesian MMM).
 - v1 accepts CRM and GA4 CSV uploads; it does not include HubSpot OAuth or direct GA4 API access.
 - MIRA does not make autonomous changes to ad platforms.
-- Public signup, payments, scheduled jobs, and multi-organization Admin management are out of
-  scope for this reference implementation.
-- Research and narrative quality depend on Exa and the configured LLM provider. Narrow fallbacks
-  preserve a partial report when a provider response is unavailable or malformed.
+- Public signup, payments, scheduled jobs, and multi-organization Admin management are out of scope for this reference implementation.
+- Research insights extraction, synthesis, and narrative quality depend on Exa and the configured LLM provider. The critic node retries narrative generation once if internal contradictions are detected, and narrow fallbacks preserve a partial report when a provider response is unavailable or malformed.

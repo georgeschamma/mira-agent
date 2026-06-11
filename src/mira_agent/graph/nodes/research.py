@@ -1,7 +1,14 @@
 from __future__ import annotations
 
+from pydantic_ai import Agent
+
 from mira_agent.graph.context import MiraContext
-from mira_agent.graph.state import MiraState, NodeError, ResearchFinding
+from mira_agent.graph.state import (
+    MiraState,
+    NodeError,
+    ResearchFinding,
+    ResearchInsights,
+)
 from mira_agent.repositories.campaigns import write_audit_row
 from mira_agent.schemas.analyze import AnalyzeRequest
 
@@ -13,6 +20,38 @@ def build_research_query(request: AnalyzeRequest) -> str:
         f"Audience: {request.audience}. Channels: {channels}. "
         f"Goal: {request.goal}. Budget: {request.budget}."
     )
+
+
+async def extract_research_insights(
+    findings: list[ResearchFinding],
+    context: MiraContext,
+) -> ResearchInsights:
+    if not findings:
+        return ResearchInsights()
+
+    agent = Agent(
+        context.model,
+        output_type=ResearchInsights,
+        instructions=(
+            "Extract structured research insights from the given web search findings. "
+            "Identify specific channel benchmarks "
+            "(platform name, metrics like CTR/CPC/conversion rate, "
+            "range of values, source URL), "
+            "strategic signals (market trends, buyer behaviors), and suggested test channels. "
+            "All source URLs must be copied exactly from the findings."
+        ),
+        retries=1,
+    )
+    try:
+        findings_text = "\n\n".join(
+            f"Title: {f.title}\nURL: {f.url}\nHighlights:\n"
+            + "\n".join(f"- {h}" for h in f.highlights)
+            for f in findings
+        )
+        result = await agent.run(findings_text)
+        return ResearchInsights.model_validate(result.output)
+    except Exception:
+        return ResearchInsights()
 
 
 async def research_node(state: MiraState, context: MiraContext) -> MiraState:
@@ -42,7 +81,7 @@ async def research_node(state: MiraState, context: MiraContext) -> MiraState:
             confidence="low",
             summary="Exa research failed; continuing with brief-only sources.",
         )
-        return {"findings": [], "errors": errors}
+        return {"findings": [], "research_insights_data": ResearchInsights(), "errors": errors}
 
     confidence = "medium" if findings else "low"
     if not findings:
@@ -67,7 +106,10 @@ async def research_node(state: MiraState, context: MiraContext) -> MiraState:
         confidence=confidence,
         summary=summary,
     )
-    return {"findings": findings, "errors": errors}
+
+    insights = await extract_research_insights(findings, context)
+
+    return {"findings": findings, "research_insights_data": insights, "errors": errors}
 
 
 async def _write_research_audit(
@@ -91,3 +133,4 @@ async def _write_research_audit(
         confidence=confidence,
         model_used="none",
     )
+

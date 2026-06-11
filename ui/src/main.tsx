@@ -35,9 +35,9 @@ const initialMediaPlan: MediaPlanForm = {
   brief: [
     "Product: MIRA",
     "Audience: B2B marketers",
-    "Channels: linkedin, paid search",
-    "Budget: 1000",
-    "Goal: book demos",
+    "Channels: google, linkedin, meta, tiktok",
+    "Budget: 10000",
+    "Goal: grow pipeline",
   ].join("\n"),
 };
 
@@ -460,6 +460,35 @@ function App() {
                     ) : null}
                   </div>
                   <pre>{report.document_markdown}</pre>
+                  {report.document_metadata && Array.isArray(report.document_metadata.expansion_tests) && report.document_metadata.expansion_tests.length > 0 ? (
+                    <div className="recommended-tests-metadata" style={{ marginTop: "32px" }}>
+                      <h3 style={{ fontSize: "1.2rem", fontWeight: "600", marginBottom: "12px" }}>Recommended Tests (Metadata Dashboard)</h3>
+                      <div className="table-responsive" style={{ overflowX: "auto" }}>
+                        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.9rem" }}>
+                          <thead>
+                            <tr style={{ textAlign: "left", borderBottom: "2px solid var(--border-color, #e2e8f0)", background: "rgba(0,0,0,0.02)" }}>
+                              <th style={{ padding: "12px 8px" }}>Channel</th>
+                              <th style={{ padding: "12px 8px" }}>Monthly Test Budget</th>
+                              <th style={{ padding: "12px 8px" }}>Hypothesis</th>
+                              <th style={{ padding: "12px 8px" }}>Primary KPI</th>
+                              <th style={{ padding: "12px 8px" }}>Source</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {(report.document_metadata.expansion_tests as any[]).map((test, index) => (
+                              <tr key={index} style={{ borderBottom: "1px solid var(--border-color, #e2e8f0)" }}>
+                                <td style={{ padding: "12px 8px", fontWeight: "500" }}>{test.channel}</td>
+                                <td style={{ padding: "12px 8px" }}>{test.monthly_budget_range}</td>
+                                <td style={{ padding: "12px 8px", color: "var(--text-muted, #4a5568)" }}>{test.hypothesis}</td>
+                                <td style={{ padding: "12px 8px" }}>{test.primary_kpi}</td>
+                                <td style={{ padding: "12px 8px", fontSize: "0.8rem", color: "var(--text-muted, #718096)" }}>{test.source}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  ) : null}
                 </div>
               ) : (
                 <div className="recommendation-list">

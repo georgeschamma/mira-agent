@@ -202,5 +202,6 @@ async def test_run_media_plan_analysis_writes_phase_3_audit_and_document() -> No
         "performance",
         "synthesize",
         "strategy",
+        "critic",
     ]
     assert sheet_rows[-1]["document_status"] == "pending"

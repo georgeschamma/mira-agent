@@ -16,8 +16,7 @@ Say:
 > MIRA is a marketing intelligence agent that turns a campaign brief, CRM data, and GA4
 > performance history into a sourced media plan.
 
-Sign in as `analyst@mira.local` using the private demo password. Show the prefilled brief and
-upload both sample CSV files.
+Sign in as `analyst@mira.local` using the private demo password. Paste the $10,000 expansion brief from `samples/README.md` (which requests google, linkedin, meta, and tiktok), and upload both sample CSV files.
 
 ## 0:20-1:10 - Run The Agent
 
@@ -29,10 +28,11 @@ target video length.
 Say:
 
 > The Brief Agent starts the run, then Research, Audience, and Performance work in parallel.
-> Performance uses deterministic response-curve math for budget allocation. The LLM writes only
-> the supporting sourced narrative.
+> Performance uses deterministic response-curve math for budget allocation. Saturated channels
+> with low marginal ROI are capped at their current spend, and the remaining budget ($8,020)
+> is surfaced as expansion budget. The LLM writes only the supporting sourced narrative.
 
-When the report loads, show the strategy document and budget allocation table.
+When the report loads, show the strategy document, budget allocation table, and the new **Recommended Tests** table showing Meta and TikTok tests. Also highlight the **Recommended Tests (Metadata Dashboard)** below the markdown.
 
 ## 1:10-1:45 - Auditability
 

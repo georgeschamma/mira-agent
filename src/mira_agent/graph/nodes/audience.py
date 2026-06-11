@@ -6,6 +6,7 @@ from mira_agent.integrations.crm import parse_crm_csv
 from mira_agent.integrations.ga4 import CsvParseError
 from mira_agent.repositories.campaigns import write_audit_row
 from mira_agent.schemas.media_plan import MediaPlanGraphRequest
+from mira_agent.services.audience_channel_map import map_audience_to_channels
 
 
 async def audience_node(state: MiraMediaPlanState, context: MiraContext) -> MiraMediaPlanState:
@@ -52,10 +53,14 @@ async def audience_node(state: MiraMediaPlanState, context: MiraContext) -> Mira
         pii_accessed=True,
     )
 
+    hints = map_audience_to_channels(result.segments)
+
     return {
         "audience_segments": result.segments,
+        "audience_channel_hints": hints,
         "warnings": [warning.message for warning in result.warnings],
         "crm_warnings": result.warnings,
         "crm_row_count": result.row_count,
         "errors": [],
     }
+

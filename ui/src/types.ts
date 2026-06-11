@@ -104,6 +104,15 @@ export type BudgetAllocationResponse = {
   zone: string;
 };
 
+export type ExpansionTestResponse = {
+  channel: string;
+  monthly_budget_range: string;
+  hypothesis: string;
+  primary_kpi: string;
+  audience_fit: string;
+  source: string;
+};
+
 export type MediaPlanResponse = {
   campaign_id: string;
   run_id: string;
@@ -117,6 +126,10 @@ export type MediaPlanResponse = {
   audience_segments: AudienceSegmentResponse[];
   channel_summaries: ChannelSummaryResponse[];
   allocations: BudgetAllocationResponse[];
+  expansion_tests: ExpansionTestResponse[];
+  expansion_budget: number;
+  policy_notes: string[];
+  mmm_raw_allocations: BudgetAllocationResponse[];
 };
 
 export type AuditRowResponse = {

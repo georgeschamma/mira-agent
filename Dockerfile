@@ -12,6 +12,7 @@ ENV PATH="/app/.venv/bin:$PATH"
 RUN pip install --no-cache-dir uv
 COPY pyproject.toml README.md ./
 COPY src ./src
+COPY skills ./skills
 RUN uv sync --no-dev --no-editable
 COPY --from=ui /app/ui/dist ./ui/dist
 EXPOSE 8123

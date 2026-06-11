@@ -5,8 +5,10 @@ from mira_agent.graph.state import MiraMediaPlanState, NodeError
 from mira_agent.integrations.ga4 import CsvParseError, parse_ga4_csv
 from mira_agent.repositories.campaigns import write_audit_row
 from mira_agent.schemas.media_plan import MediaPlanGraphRequest
+from mira_agent.services.allocation_policy import apply_allocation_policy
 from mira_agent.services.mmm import (
     ChannelAllocation,
+    _zone,
     fit_channel,
     insufficient_allocation,
     optimize_allocation,
@@ -78,18 +80,36 @@ async def performance_node(state: MiraMediaPlanState, context: MiraContext) -> M
     else:
         fitted_budget = max(total_budget - held_budget, 0.0)
 
+    # Phase 6: MMM Tuning - Lower cap_ratio to 1.0 when all channels are saturated
+    all_saturated = len(curves) > 0 and all(
+        _zone(c, result.current_spend.get(c.channel, 0.0)) == "saturated"
+        for c in curves
+    )
+    cap_ratio = 1.0 if all_saturated else 2.0
+
     plan = optimize_allocation(
         curves=curves,
         current_spend=result.current_spend,
         total_budget=fitted_budget,
+        cap_ratio=cap_ratio,
     )
-    allocations = [*plan.allocations, *insufficient]
+
+    policy_plan = apply_allocation_policy(
+        raw_plan=plan,
+        insufficient=insufficient,
+        brief=parsed_brief,
+        summaries=result.summaries,
+        brief_channels=parsed_brief.channels,
+        curves=curves,
+    )
+
+    allocations = policy_plan.fitted_allocations
     confidence = "high" if curves and not insufficient else "medium" if curves else "low"
     allocation_warnings = []
-    if plan.unallocated_budget > 0.01:
+    if policy_plan.expansion_budget > 0.01:
         allocation_warnings.append(
-            f"{plan.unallocated_budget:,.0f} of the requested budget was left unallocated because "
-            "fitted channels reached supported spend caps."
+            f"{policy_plan.expansion_budget:,.0f} of the requested budget "
+            "was left unallocated because fitted channels reached supported spend caps."
         )
 
     await write_audit_row(
@@ -100,7 +120,7 @@ async def performance_node(state: MiraMediaPlanState, context: MiraContext) -> M
         node="performance",
         summary=(
             f"Computed deterministic allocation for {len(curves)} fitted channel curves"
-            f" with {plan.unallocated_budget:,.0f} unallocated."
+            f" with {policy_plan.expansion_budget:,.0f} unallocated."
         ),
         source="performance:allocation",
         confidence=confidence,
@@ -113,6 +133,11 @@ async def performance_node(state: MiraMediaPlanState, context: MiraContext) -> M
         "warnings": [warning.message for warning in result.warnings] + allocation_warnings,
         "ga4_warnings": result.warnings,
         "ga4_row_count": result.row_count,
-        "unallocated_budget": plan.unallocated_budget,
+        "unallocated_budget": policy_plan.expansion_budget,
+        "expansion_budget": policy_plan.expansion_budget,
+        "expansion_candidates": policy_plan.expansion_candidates,
+        "policy_notes": policy_plan.policy_notes,
+        "mmm_raw_allocations": policy_plan.mmm_raw_allocations,
         "errors": [],
     }
+

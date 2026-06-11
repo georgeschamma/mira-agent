@@ -11,6 +11,7 @@ from mira_agent.graph.context import MiraContext
 from mira_agent.graph.nodes.audience import audience_node
 from mira_agent.graph.nodes.brief import brief_node
 from mira_agent.graph.nodes.content import content_node
+from mira_agent.graph.nodes.critic import critic_node
 from mira_agent.graph.nodes.performance import performance_node
 from mira_agent.graph.nodes.research import research_node
 from mira_agent.graph.nodes.router import router_node
@@ -26,6 +27,7 @@ from mira_agent.schemas.media_plan import (
     AudienceSegmentResponse,
     BudgetAllocationResponse,
     ChannelSummaryResponse,
+    ExpansionTestResponse,
     FileMetadata,
     MediaPlanGraphRequest,
     MediaPlanResponse,
@@ -77,12 +79,16 @@ def build_media_plan_graph(context: MiraContext):
     async def strategy(state: MiraMediaPlanState) -> MiraMediaPlanState:
         return await strategy_node(state, context)
 
+    async def critic(state: MiraMediaPlanState) -> MiraMediaPlanState:
+        return await critic_node(state, context)
+
     builder.add_node("brief", brief)
     builder.add_node("research", research)
     builder.add_node("audience", audience)
     builder.add_node("performance", performance)
     builder.add_node("synthesize", synthesize)
     builder.add_node("strategy", strategy)
+    builder.add_node("critic", critic)
     builder.add_edge(START, "brief")
     builder.add_edge("brief", "research")
     builder.add_edge("brief", "audience")
@@ -91,7 +97,14 @@ def build_media_plan_graph(context: MiraContext):
     builder.add_edge("audience", "synthesize")
     builder.add_edge("performance", "synthesize")
     builder.add_edge("synthesize", "strategy")
-    builder.add_edge("strategy", END)
+    builder.add_edge("strategy", "critic")
+
+    def route_critic(state: MiraMediaPlanState):
+        if state.get("critic_failed") and state.get("strategy_retries", 0) <= 1:
+            return "strategy"
+        return END
+
+    builder.add_conditional_edges("critic", route_critic, {"strategy": "strategy", END: END})
     return builder.compile()
 
 
@@ -219,5 +232,26 @@ async def run_media_plan_analysis(
         allocations=[
             BudgetAllocationResponse.model_validate(allocation_to_dict(item))
             for item in final_state.get("allocations", [])
+        ],
+        expansion_tests=[
+            ExpansionTestResponse(
+                channel=item.channel,
+                monthly_budget_range=item.monthly_budget_range,
+                hypothesis=item.hypothesis,
+                primary_kpi=item.primary_kpi,
+                audience_fit=item.audience_fit,
+                source=item.source,
+            )
+            for item in (
+                final_state["strategic_brief"].expansion_tests
+                if final_state.get("strategic_brief")
+                else []
+            )
+        ],
+        expansion_budget=final_state.get("expansion_budget", 0.0),
+        policy_notes=final_state.get("policy_notes", []),
+        mmm_raw_allocations=[
+            BudgetAllocationResponse.model_validate(allocation_to_dict(item))
+            for item in final_state.get("mmm_raw_allocations", [])
         ],
     )

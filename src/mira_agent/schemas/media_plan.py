@@ -54,6 +54,15 @@ class SourceClaim(BaseModel):
     source: str
 
 
+class ExpansionTestResponse(BaseModel):
+    channel: str
+    monthly_budget_range: str
+    hypothesis: str
+    primary_kpi: str
+    audience_fit: str
+    source: str
+
+
 class MediaPlanGraphRequest(BaseModel):
     org_id: str
     brief: str = Field(min_length=1)
@@ -76,9 +85,14 @@ class MediaPlanResponse(BaseModel):
     audience_segments: list[AudienceSegmentResponse]
     channel_summaries: list[ChannelSummaryResponse]
     allocations: list[BudgetAllocationResponse]
+    expansion_tests: list[ExpansionTestResponse] = Field(default_factory=list)
+    expansion_budget: float = 0.0
+    policy_notes: list[str] = Field(default_factory=list)
+    mmm_raw_allocations: list[BudgetAllocationResponse] = Field(default_factory=list)
 
 
 class MediaPlanDocument(BaseModel):
     document_markdown: str
     document_metadata: dict[str, object]
     document_status: DocumentStatus = "pending"
+

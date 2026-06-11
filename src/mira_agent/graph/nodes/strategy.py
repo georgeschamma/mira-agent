@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import re
 import time
 
@@ -7,8 +8,8 @@ from pydantic import BaseModel, Field
 from pydantic_ai import Agent
 
 from mira_agent.graph.context import MiraContext
-from mira_agent.graph.state import MiraMediaPlanState, NodeError, StrategicBrief
-from mira_agent.repositories.campaigns import finish_campaign_run, write_audit_row
+from mira_agent.graph.state import ExpansionTest, MiraMediaPlanState, NodeError, StrategicBrief
+from mira_agent.repositories.campaigns import write_audit_row
 from mira_agent.repositories.media_plans import save_media_plan_document
 from mira_agent.schemas.media_plan import MediaPlanGraphRequest, SourceClaim
 from mira_agent.services.mmm import ChannelAllocation, allocation_to_dict
@@ -26,11 +27,41 @@ class StrategyNarrativeOutput(BaseModel):
     claims: list[SourceClaim] = Field(min_length=1)
 
 
+def _load_skill(name: str) -> str:
+    path = os.path.abspath(__file__)
+    for _ in range(5):
+        path = os.path.dirname(path)
+    base = path
+    path = os.path.join(base, "skills", name)
+    if os.path.exists(path):
+        with open(path, encoding="utf-8") as f:
+            return f.read()
+    return ""
+
+
+def render_recommended_tests_table(tests: list[ExpansionTest]) -> str:
+    if not tests:
+        return "No recommended tests at this time."
+    rows = [
+        "| Channel | Monthly test budget | Hypothesis | Primary KPI | Source |",
+        "|---|---|---|---|---|",
+    ]
+    for test in tests:
+        rows.append(
+            f"| {test.channel} | {test.monthly_budget_range} | {test.hypothesis} | "
+            f"{test.primary_kpi} | {test.source} |"
+        )
+    return "\n".join(rows)
+
+
 async def strategy_node(state: MiraMediaPlanState, context: MiraContext) -> MiraMediaPlanState:
     campaign_id = state["campaign_id"]
     run_id = state["run_id"]
     started_at = state.get("started_at", time.perf_counter())
     request = MediaPlanGraphRequest.model_validate(state["media_input"])
+
+    retries = state.get("strategy_retries", 0)
+    state["strategy_retries"] = retries + 1
 
     table = render_budget_table(state.get("allocations", []))
     narrative = await generate_strategy_narrative(state=state, context=context, budget_table=table)
@@ -44,6 +75,20 @@ async def strategy_node(state: MiraMediaPlanState, context: MiraContext) -> Mira
         narrative=narrative,
     )
     processing_ms = int((time.perf_counter() - started_at) * 1000)
+
+    strategic_brief = state.get("strategic_brief")
+    expansion_tests_serializable = []
+    if strategic_brief:
+        for t in strategic_brief.expansion_tests:
+            expansion_tests_serializable.append({
+                "channel": t.channel,
+                "monthly_budget_range": t.monthly_budget_range,
+                "hypothesis": t.hypothesis,
+                "primary_kpi": t.primary_kpi,
+                "audience_fit": t.audience_fit,
+                "source": t.source,
+            })
+
     metadata = {
         "crm_file": {
             "filename": request.crm_filename,
@@ -61,6 +106,13 @@ async def strategy_node(state: MiraMediaPlanState, context: MiraContext) -> Mira
         "strategic_brief": (
             state["strategic_brief"].model_dump() if state.get("strategic_brief") else None
         ),
+        "expansion_tests": expansion_tests_serializable,
+        "expansion_budget": state.get("expansion_budget", 0.0),
+        "policy_notes": state.get("policy_notes", []),
+        "mmm_raw_allocations": [
+            allocation_to_dict(item)
+            for item in state.get("mmm_raw_allocations", [])
+        ],
     }
 
     ids = await save_media_plan_document(
@@ -87,11 +139,6 @@ async def strategy_node(state: MiraMediaPlanState, context: MiraContext) -> Mira
         confidence="low" if fallback_used else "medium" if state.get("errors") else "high",
         model_used=model_used,
     )
-    await finish_campaign_run(
-        client=context.client,
-        run_id=run_id,
-        status="partial" if state.get("errors") else "done",
-    )
 
     return {
         "action_sheet_id": ids.action_sheet_id,
@@ -108,6 +155,7 @@ async def generate_strategy_narrative(
     context: MiraContext,
     budget_table: str,
 ) -> StrategyNarrativeOutput:
+    strategy_skill = _load_skill("media-plan-strategy.md")
     agent = Agent(
         context.model,
         output_type=StrategyNarrativeOutput,
@@ -118,9 +166,10 @@ async def generate_strategy_narrative(
             "risks, and expansion candidates. If the brief lists channels without GA4 "
             "performance data, treat them as narrative-only expansion candidates outside the "
             "deterministic allocation table. Every claim source must start with https://, "
-            "brief:, crm:segment:, ga4:, or performance:."
+            "brief:, crm:segment:, ga4:, or performance:.\n\n"
+            f"Strategy Guidelines:\n{strategy_skill}"
         ),
-        retries=1,
+        retries=2,
     )
     try:
         result = await agent.run(_strategy_prompt(state=state, budget_table=budget_table))
@@ -242,6 +291,10 @@ def render_media_plan_document(
         "\n".join(f"- {warning}" for warning in parse_warnings) if parse_warnings else "- None"
     )
 
+    strategic_brief = state.get("strategic_brief")
+    expansion_tests_list = strategic_brief.expansion_tests if strategic_brief else []
+    recommended_tests_table = render_recommended_tests_table(expansion_tests_list)
+
     return "\n".join(
         [
             f"# Media Plan - {brief.product}",
@@ -254,6 +307,9 @@ def render_media_plan_document(
             "",
             "## Budget Allocation",
             table,
+            "",
+            "## Recommended Tests",
+            recommended_tests_table,
             "",
             "## Audience Strategy",
             narrative.audience_strategy,
@@ -297,10 +353,22 @@ def render_budget_context(state: MiraMediaPlanState) -> str:
         ", ".join(_cell(item) for item in saturated_channels) if saturated_channels else "None"
     )
 
+    expansion_budget = state.get("expansion_budget", 0.0)
+    policy_notes = state.get("policy_notes", [])
+
     lines = [
         f"- Brief budget: {_money(brief.budget) if brief.budget > 0 else 'not provided'}",
         f"- Current GA4 spend: {_money(current_spend)}",
         f"- Net budget change required: {_budget_delta_label(brief.budget, current_spend)}",
+        f"- Expansion budget available: {_money(expansion_budget)}",
+        (
+            "- Policy adjustments: "
+            + (
+                "; ".join(_cell(n) for n in policy_notes)
+                if policy_notes
+                else "None"
+            )
+        ),
         (
             f"- GA4 channels with performance data: {len(summaries)}"
             f"{_list_suffix([item.channel for item in summaries])}"
@@ -366,7 +434,18 @@ def _strategy_prompt(*, state: MiraMediaPlanState, budget_table: str) -> str:
         f"source={item.source_ref}"
         for item in state.get("channel_summaries", [])
     )
+    remediation = state.get("strategy_remediation", "")
+    remediation_block = (
+        f"REMEDIATION CONTEXT FROM PREVIOUS ATTEMPT:\n{remediation}\n\n"
+        if remediation
+        else ""
+    )
+    hints = state.get("audience_channel_hints", [])
+    hints_block = f"Audience channel hints: {', '.join(hints)}\n" if hints else ""
+    expansion_budget = state.get("expansion_budget", 0.0)
+
     return (
+        f"{remediation_block}"
         "Parsed brief:\n"
         f"- Product: {brief.product}\n"
         f"- Audience: {brief.audience}\n"
@@ -375,6 +454,8 @@ def _strategy_prompt(*, state: MiraMediaPlanState, budget_table: str) -> str:
         f"- Budget: {_money(brief.budget) if brief.budget > 0 else 'not provided'}\n\n"
         "Budget context:\n"
         f"{budget_context}\n\n"
+        f"Expansion budget available: {_money(expansion_budget)}\n"
+        f"{hints_block}\n"
         "Strategic synthesis brief:\n"
         f"{_strategic_brief_block(strategic_brief)}\n\n"
         "Fixed budget table:\n"
@@ -396,16 +477,31 @@ def _strategy_prompt(*, state: MiraMediaPlanState, budget_table: str) -> str:
 def _strategic_brief_block(strategic_brief: StrategicBrief | None) -> str:
     if strategic_brief is None:
         return "- none"
+
+    test_lines = []
+    for t in strategic_brief.expansion_tests:
+        test_lines.append(
+            f"    - Channel: {t.channel}, "
+            f"Budget Range: {t.monthly_budget_range}, "
+            f"Hypothesis: {t.hypothesis}, "
+            f"KPI: {t.primary_kpi}"
+        )
+    test_block = "\n".join(test_lines) if test_lines else "    - none"
+
     return "\n".join(
         [
             f"- Situation: {strategic_brief.situation_summary}",
             f"- Saturation diagnosis: {strategic_brief.saturation_diagnosis}",
+            f"- Planning Mode: {strategic_brief.planning_mode}",
+            f"- Channel roles: {strategic_brief.channel_roles}",
+            f"- Do Not Scale channels: {strategic_brief.do_not_scale}",
+            f"- Budget Waterfall: {strategic_brief.budget_waterfall}",
             "- Audience priorities:\n"
             f"{_bullet_block(strategic_brief.audience_priorities)}",
             "- Channel moves:\n"
             f"{_bullet_block(strategic_brief.channel_moves)}",
-            "- Expansion opportunities:\n"
-            f"{_bullet_block(strategic_brief.expansion_opportunities)}",
+            "- Recommended Tests:\n"
+            f"{test_block}",
             "- Key risks:\n"
             f"{_bullet_block(strategic_brief.key_risks)}",
             "- Research insights:\n"

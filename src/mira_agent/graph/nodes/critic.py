@@ -3,7 +3,10 @@ from __future__ import annotations
 from mira_agent.graph.context import MiraContext
 from mira_agent.graph.state import MiraMediaPlanState
 from mira_agent.repositories.campaigns import finish_campaign_run, write_audit_row
-from mira_agent.services.sources import validate_source_ref
+from mira_agent.services.sources import (
+    build_source_whitelist,
+    validate_source_ref_against_whitelist,
+)
 
 
 async def critic_node(state: MiraMediaPlanState, context: MiraContext) -> MiraMediaPlanState:
@@ -15,6 +18,7 @@ async def critic_node(state: MiraMediaPlanState, context: MiraContext) -> MiraMe
 
     claims = document_metadata.get("source_claims", [])
     expansion_budget = state.get("expansion_budget", 0.0)
+    allowed_refs = build_source_whitelist(state)
 
     remediations = []
 
@@ -38,11 +42,11 @@ async def critic_node(state: MiraMediaPlanState, context: MiraContext) -> MiraMe
                 f"but no expansion tests were defined."
             )
 
-    # Check 3: Claims missing required source prefixes
+    # Check 3: Claims missing required source refs
     for claim in claims:
         source = claim.get("source", "")
         try:
-            validate_source_ref(source)
+            validate_source_ref_against_whitelist(source, allowed_refs)
         except ValueError as exc:
             remediations.append(
                 f"Claim validation failure: Source '{source}' is invalid. {exc}"

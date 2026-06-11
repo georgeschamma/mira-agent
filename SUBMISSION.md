@@ -106,7 +106,7 @@ flowchart LR
 
 | Evidence | Result |
 |---|---|
-| Backend compile, Ruff, unit, and API validation | `make validate`: 90 tests passed on June 11, 2026 |
+| Backend compile, Ruff, unit, and API validation | `make validate`: 93 tests passed on June 11, 2026 |
 | Production frontend build | `make ui-build`: passed |
 | Frontend dependency audit | `npm audit --omit=dev`: 0 vulnerabilities |
 | Local Supabase migration reset | passed |

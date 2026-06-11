@@ -22,6 +22,7 @@ from mira_agent.schemas.auth import CurrentUser
 from mira_agent.schemas.media_plan import MediaPlanGraphRequest, SourceClaim
 from mira_agent.services.allocation_policy import ExpansionAllocation
 from mira_agent.services.mmm import ChannelAllocation
+from mira_agent.services.sources import build_source_whitelist
 
 
 class FakeRlsClient:
@@ -163,7 +164,35 @@ async def test_strategy_node_renders_fixed_budget_table_and_saves_document() -> 
 
 def test_validate_source_claims_rejects_plain_http_sources() -> None:
     with pytest.raises(ValueError, match="source reference only"):
-        validate_source_claims([SourceClaim(claim="Insecure external source.", source="http://x.test")])
+        validate_source_claims(
+            [SourceClaim(claim="Insecure external source.", source="http://x.test")],
+            {"performance:allocation"},
+        )
+
+
+def test_validate_source_claims_rejects_prefix_valid_fabricated_refs() -> None:
+    with pytest.raises(ValueError, match="Unsupported source 'brief:situation'"):
+        validate_source_claims(
+            [SourceClaim(claim="Fabricated brief section.", source="brief:situation")],
+            {"performance:allocation", "brief:raw", "brief:channels"},
+        )
+
+
+def test_validate_source_claims_accepts_real_refs() -> None:
+    validate_source_claims(
+        [
+            SourceClaim(claim="Budget math.", source="performance:allocation"),
+            SourceClaim(claim="Research.", source="https://example.com/b2b"),
+            SourceClaim(claim="Audience.", source="crm:segment:lifecycle_stage:lead"),
+            SourceClaim(claim="GA4.", source="ga4:channel:paid-social-linkedin-paid"),
+        ],
+        {
+            "performance:allocation",
+            "https://example.com/b2b",
+            "crm:segment:lifecycle_stage:lead",
+            "ga4:channel:paid-social-linkedin-paid",
+        },
+    )
 
 
 def test_strategy_narrative_requires_source_claims() -> None:
@@ -377,7 +406,11 @@ def test_strategy_document_explains_constrained_budget_and_missing_ga4_channels(
         table=render_budget_table(state["allocations"]),
         narrative=narrative,
     )
-    prompt = _strategy_prompt(state=state, budget_table=render_budget_table(state["allocations"]))
+    prompt = _strategy_prompt(
+        state=state,
+        budget_table=render_budget_table(state["allocations"]),
+        allowed_refs=build_source_whitelist(state),  # type: ignore[arg-type]
+    )
 
     assert "- Brief budget: 1,000" in document
     assert "- Current GA4 spend: 1,980" in document
@@ -391,6 +424,8 @@ def test_strategy_document_explains_constrained_budget_and_missing_ga4_channels(
     assert "Brief budget is 1,000 versus current GA4 spend of 1,980." in prompt
     assert "Paid Search / google/cpc: 1,100 -> 560" in prompt
     assert "Retargeting tests can support saturated search channels." in prompt
+    assert "Allowed claim sources - cite only from this list:" in prompt
+    assert "https://example.com/benchmark" in prompt
     assert "Expansion candidates outside the deterministic table:\nMeta, TikTok" in prompt
 
 

@@ -6,7 +6,7 @@ import time
 from dataclasses import asdict
 
 from pydantic import BaseModel, Field
-from pydantic_ai import Agent
+from pydantic_ai import Agent, ModelRetry
 
 from mira_agent.graph.context import MiraContext
 from mira_agent.graph.state import ExpansionTest, MiraMediaPlanState, NodeError, StrategicBrief
@@ -15,7 +15,11 @@ from mira_agent.repositories.media_plans import save_media_plan_document
 from mira_agent.schemas.media_plan import MediaPlanGraphRequest, SourceClaim
 from mira_agent.services.allocation_policy import ExpansionAllocation
 from mira_agent.services.mmm import ChannelAllocation, allocation_to_dict
-from mira_agent.services.sources import validate_source_ref
+from mira_agent.services.sources import (
+    build_source_whitelist,
+    source_ref_is_allowed,
+    validate_source_ref_against_whitelist,
+)
 
 
 class StrategyNarrativeOutput(BaseModel):
@@ -82,8 +86,9 @@ async def strategy_node(state: MiraMediaPlanState, context: MiraContext) -> Mira
     state["strategy_retries"] = retries + 1
 
     table = render_budget_table(state.get("allocations", []))
+    allowed_refs = build_source_whitelist(state)
     narrative = await generate_strategy_narrative(state=state, context=context, budget_table=table)
-    validate_source_claims(narrative.claims)
+    validate_source_claims(narrative.claims, allowed_refs)
     fallback_used = _strategy_fallback_used(state)
     model_used = "deterministic-fallback" if fallback_used else context.settings.llm_model or "none"
     document = render_media_plan_document(
@@ -178,6 +183,7 @@ async def generate_strategy_narrative(
     budget_table: str,
 ) -> StrategyNarrativeOutput:
     strategy_skill = _load_skill("media-plan-strategy.md")
+    allowed_refs = build_source_whitelist(state)
     agent = Agent(
         context.model,
         output_type=StrategyNarrativeOutput,
@@ -187,20 +193,37 @@ async def generate_strategy_narrative(
             "synthesis brief as the primary source for situation, audience, channel moves, "
             "risks, and expansion candidates. If the brief lists channels without GA4 "
             "performance data, treat them as narrative-only expansion candidates outside the "
-            "deterministic allocation table. Every claim source must start with https://, "
-            "brief:, crm:segment:, ga4:, or performance:.\n\n"
+            "deterministic allocation table. Cite only from the allowed source list in the "
+            "prompt; do not invent brief, performance, GA4, CRM, or HTTPS references.\n\n"
             f"Strategy Guidelines:\n{strategy_skill}"
         ),
         retries=2,
     )
+
+    @agent.output_validator
+    def source_claims_must_match_allowed_refs(
+        output: StrategyNarrativeOutput,
+    ) -> StrategyNarrativeOutput:
+        try:
+            validate_source_claims(output.claims, allowed_refs)
+        except ValueError as exc:
+            raise ModelRetry(str(exc)) from exc
+        return output
+
     try:
-        result = await agent.run(_strategy_prompt(state=state, budget_table=budget_table))
+        result = await agent.run(
+            _strategy_prompt(
+                state=state,
+                budget_table=budget_table,
+                allowed_refs=allowed_refs,
+            )
+        )
         output = StrategyNarrativeOutput.model_validate(result.output)
-        validate_source_claims(output.claims)
+        validate_source_claims(output.claims, allowed_refs)
         return output
     except Exception:
         _record_strategy_fallback(state)
-        return fallback_narrative(state)
+        return fallback_narrative(state, allowed_refs=allowed_refs)
 
 
 def _record_strategy_fallback(state: MiraMediaPlanState) -> None:
@@ -222,7 +245,11 @@ def _strategy_fallback_used(state: MiraMediaPlanState) -> bool:
     )
 
 
-def fallback_narrative(state: MiraMediaPlanState) -> StrategyNarrativeOutput:
+def fallback_narrative(
+    state: MiraMediaPlanState,
+    *,
+    allowed_refs: set[str] | None = None,
+) -> StrategyNarrativeOutput:
     strategic_brief = state.get("strategic_brief")
     if strategic_brief:
         return StrategyNarrativeOutput(
@@ -247,13 +274,11 @@ def fallback_narrative(state: MiraMediaPlanState) -> StrategyNarrativeOutput:
                 strategic_brief.key_risks,
                 "Channels with insufficient spend history are held or flagged for review.",
             ),
-            claims=strategic_brief.source_claims
-            or [
-                SourceClaim(
-                    claim="Budget allocation comes from deterministic performance math.",
-                    source="performance:allocation",
-                )
-            ],
+            claims=_fallback_claims(
+                state=state,
+                candidate_claims=strategic_brief.source_claims,
+                allowed_refs=allowed_refs,
+            ),
         )
 
     first_segment = (
@@ -433,12 +458,17 @@ def render_budget_table(allocations: list[ChannelAllocation]) -> str:
     return "\n".join(rows)
 
 
-def validate_source_claims(claims: list[SourceClaim]) -> None:
+def validate_source_claims(claims: list[SourceClaim], allowed_refs: set[str]) -> None:
     for claim in claims:
-        validate_source_ref(claim.source)
+        validate_source_ref_against_whitelist(claim.source, allowed_refs)
 
 
-def _strategy_prompt(*, state: MiraMediaPlanState, budget_table: str) -> str:
+def _strategy_prompt(
+    *,
+    state: MiraMediaPlanState,
+    budget_table: str,
+    allowed_refs: set[str],
+) -> str:
     brief = state["parsed_brief"]
     budget_context = render_budget_context(state)
     strategic_brief = state.get("strategic_brief")
@@ -491,11 +521,14 @@ def _strategy_prompt(*, state: MiraMediaPlanState, budget_table: str) -> str:
         f"{segments or '- none'}\n\n"
         "GA4 performance summaries:\n"
         f"{summaries or '- none'}\n\n"
+        "Allowed claim sources - cite only from this list:\n"
+        f"{_allowed_refs_block(allowed_refs)}\n\n"
         "Expansion candidates outside the deterministic table:\n"
         f"{', '.join(missing_channels) if missing_channels else 'None'}\n\n"
         "Return narrative sections only. Do not output alternative spend numbers. "
         "Do not add expansion candidates to the deterministic allocation table; discuss them "
-        "as qualitative tests until GA4 spend history exists."
+        "as qualitative tests until GA4 spend history exists. Every claim source must match "
+        "one allowed source exactly."
     )
 
 
@@ -547,6 +580,58 @@ def _source_claim_block(claims: list[SourceClaim]) -> str:
 
 def _fallback_list(items: list[str], fallback: str) -> str:
     return " ".join(items) if items else fallback
+
+
+def _fallback_claims(
+    *,
+    state: MiraMediaPlanState,
+    candidate_claims: list[SourceClaim],
+    allowed_refs: set[str] | None,
+) -> list[SourceClaim]:
+    if allowed_refs is None:
+        return candidate_claims or _default_fallback_claims(state, set())
+
+    claims = [
+        claim for claim in candidate_claims if source_ref_is_allowed(claim.source, allowed_refs)
+    ]
+    return claims or _default_fallback_claims(state, allowed_refs)
+
+
+def _default_fallback_claims(
+    state: MiraMediaPlanState,
+    allowed_refs: set[str],
+) -> list[SourceClaim]:
+    claims = [
+        SourceClaim(
+            claim="Budget allocation comes from deterministic performance math.",
+            source="performance:allocation",
+        )
+    ]
+    segments = state.get("audience_segments", [])
+    if segments:
+        ref = segments[0].reference
+        if not allowed_refs or ref in allowed_refs:
+            claims.append(
+                SourceClaim(
+                    claim="Audience strategy uses aggregate CRM segments only.",
+                    source=ref,
+                )
+            )
+    findings = state.get("findings", [])
+    if findings:
+        ref = findings[0].url
+        if not allowed_refs or ref in allowed_refs:
+            claims.append(
+                SourceClaim(
+                    claim="Research context uses sourced market signals when available.",
+                    source=ref,
+                )
+            )
+    return claims
+
+
+def _allowed_refs_block(allowed_refs: set[str]) -> str:
+    return "\n".join(f"- {ref}" for ref in sorted(allowed_refs))
 
 
 def channels_without_ga4_data(brief_channels: list[str], ga4_channels: list[str]) -> list[str]:

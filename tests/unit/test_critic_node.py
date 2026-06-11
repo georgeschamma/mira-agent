@@ -74,7 +74,9 @@ def _base_state() -> MiraMediaPlanState:
         "warnings": [],
         "errors": [],
         "document_metadata": {
-            "source_claims": [{"claim": "Valid GA4 data.", "source": "ga4:google"}]
+            "source_claims": [
+                {"claim": "Valid allocation.", "source": "performance:allocation"}
+            ]
         },
         "strategy_retries": 0,
     }
@@ -236,6 +238,31 @@ async def test_critic_fails_invalid_claim_source() -> None:
 
     assert result.get("critic_failed") is True
     assert "Claim validation failure" in result.get("strategy_remediation", "")
+
+
+@pytest.mark.asyncio
+async def test_critic_fails_prefix_valid_fabricated_claim_source() -> None:
+    client = FakeRlsClient()
+    context = _test_context(client)
+    state = _base_state()
+
+    state["document_metadata"] = {
+        "source_claims": [
+            {"claim": "Fabricated brief section.", "source": "brief:situation"}
+        ]
+    }
+    state["strategic_brief"] = StrategicBrief(
+        planning_mode="growth",
+        situation_summary="Situation summary",
+        saturation_diagnosis="Diagnosis",
+        do_not_scale=[],
+        expansion_tests=[],
+    )
+
+    result = await critic_node(state, context)
+
+    assert result.get("critic_failed") is True
+    assert "brief:situation" in result.get("strategy_remediation", "")
 
 
 @pytest.mark.asyncio

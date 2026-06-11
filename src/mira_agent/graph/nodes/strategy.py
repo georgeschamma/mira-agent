@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 import time
 
 from pydantic import BaseModel, Field
@@ -19,6 +20,7 @@ class StrategyNarrativeOutput(BaseModel):
     executive_summary: str
     audience_strategy: str
     channel_rationale: str
+    expansion_opportunities: str
     sequencing: str
     risks: str
     claims: list[SourceClaim] = Field(min_length=1)
@@ -108,7 +110,9 @@ async def generate_strategy_narrative(
         output_type=StrategyNarrativeOutput,
         instructions=(
             "Write concise media-plan narrative sections. Budget numbers are fixed facts from "
-            "the prompt; explain them but do not invent or change them. Every claim source must "
+            "the prompt; explain them but do not invent or change them. If the brief lists "
+            "channels without GA4 performance data, treat them as narrative-only expansion "
+            "candidates outside the deterministic allocation table. Every claim source must "
             "start with https://, brief:, crm:segment:, ga4:, or performance:."
         ),
         retries=1,
@@ -159,6 +163,10 @@ def fallback_narrative(state: MiraMediaPlanState) -> StrategyNarrativeOutput:
             "Prioritize the largest CRM lifecycle segments without exposing row-level PII."
         ),
         channel_rationale="Shift spend according to marginal ROI and saturation status.",
+        expansion_opportunities=(
+            "Treat brief-requested channels without GA4 history as narrative-only test candidates; "
+            "do not add them to the deterministic allocation table until spend history exists."
+        ),
         sequencing=(
             "Launch the highest-confidence channel moves first, then review sparse channels."
         ),
@@ -190,7 +198,11 @@ def render_media_plan_document(
     brief = state["parsed_brief"]
     warnings = state.get("warnings", [])
     claims = "\n".join(f"- {claim.claim} ({claim.source})" for claim in narrative.claims)
-    warning_lines = "\n".join(f"- {warning}" for warning in warnings) if warnings else "- None"
+    budget_context = render_budget_context(state)
+    parse_warnings = _parse_warnings(warnings)
+    warning_lines = (
+        "\n".join(f"- {warning}" for warning in parse_warnings) if parse_warnings else "- None"
+    )
 
     return "\n".join(
         [
@@ -198,6 +210,9 @@ def render_media_plan_document(
             "",
             "## Executive Summary",
             narrative.executive_summary,
+            "",
+            "## Budget Context",
+            budget_context,
             "",
             "## Budget Allocation",
             table,
@@ -207,6 +222,9 @@ def render_media_plan_document(
             "",
             "## Channel Rationale",
             narrative.channel_rationale,
+            "",
+            "## Expansion Opportunities",
+            narrative.expansion_opportunities,
             "",
             "## Sequencing & Timing",
             narrative.sequencing,
@@ -225,6 +243,45 @@ def render_media_plan_document(
             f"- GA4 file: {request.ga4_filename}",
         ]
     ).strip() + "\n"
+
+
+def render_budget_context(state: MiraMediaPlanState) -> str:
+    brief = state["parsed_brief"]
+    summaries = state.get("channel_summaries", [])
+    allocations = state.get("allocations", [])
+    current_spend = sum(item.total_cost for item in summaries)
+    missing_channels = channels_without_ga4_data(
+        brief.channels, [item.channel for item in summaries]
+    )
+    saturated_channels = [item.channel for item in allocations if item.zone == "saturated"]
+    budget_warnings = _budget_warnings(state.get("warnings", []))
+    saturated_label = (
+        ", ".join(_cell(item) for item in saturated_channels) if saturated_channels else "None"
+    )
+
+    lines = [
+        f"- Brief budget: {_money(brief.budget) if brief.budget > 0 else 'not provided'}",
+        f"- Current GA4 spend: {_money(current_spend)}",
+        f"- Net budget change required: {_budget_delta_label(brief.budget, current_spend)}",
+        (
+            f"- GA4 channels with performance data: {len(summaries)}"
+            f"{_list_suffix([item.channel for item in summaries])}"
+        ),
+        (
+            f"- Fitted allocation rows: {len(allocations)}"
+            f"{_list_suffix([item.channel for item in allocations])}"
+        ),
+        f"- Saturated fitted channels: {saturated_label}",
+        (
+            "- Brief channels without GA4 data: "
+            f"{', '.join(_cell(item) for item in missing_channels) if missing_channels else 'None'}"
+        ),
+    ]
+    if budget_warnings:
+        lines.append(
+            "- Budget warnings: " + " ".join(_cell(warning) for warning in budget_warnings)
+        )
+    return "\n".join(lines)
 
 
 def render_budget_table(allocations: list[ChannelAllocation]) -> str:
@@ -251,7 +308,16 @@ def validate_source_claims(claims: list[SourceClaim]) -> None:
 
 
 def _strategy_prompt(*, state: MiraMediaPlanState, budget_table: str) -> str:
-    findings = "\n".join(f"- {item.title}: {item.url}" for item in state.get("findings", []))
+    brief = state["parsed_brief"]
+    budget_context = render_budget_context(state)
+    missing_channels = channels_without_ga4_data(
+        brief.channels, [item.channel for item in state.get("channel_summaries", [])]
+    )
+    findings = "\n".join(
+        f"- {item.title}: {item.url}"
+        f"{_highlights_suffix(item.highlights)}"
+        for item in state.get("findings", [])
+    )
     segments = "\n".join(
         f"- {item.label}: {item.count} ({item.reference})"
         for item in state.get("audience_segments", [])
@@ -262,6 +328,14 @@ def _strategy_prompt(*, state: MiraMediaPlanState, budget_table: str) -> str:
         for item in state.get("channel_summaries", [])
     )
     return (
+        "Parsed brief:\n"
+        f"- Product: {brief.product}\n"
+        f"- Audience: {brief.audience}\n"
+        f"- Goal: {brief.goal}\n"
+        f"- Channels requested: {', '.join(brief.channels) or 'paid media'}\n"
+        f"- Budget: {_money(brief.budget) if brief.budget > 0 else 'not provided'}\n\n"
+        "Budget context:\n"
+        f"{budget_context}\n\n"
         "Fixed budget table:\n"
         f"{budget_table}\n\n"
         "Research signals:\n"
@@ -270,8 +344,83 @@ def _strategy_prompt(*, state: MiraMediaPlanState, budget_table: str) -> str:
         f"{segments or '- none'}\n\n"
         "GA4 performance summaries:\n"
         f"{summaries or '- none'}\n\n"
-        "Return narrative sections only. Do not output alternative spend numbers."
+        "Expansion candidates outside the deterministic table:\n"
+        f"{', '.join(missing_channels) if missing_channels else 'None'}\n\n"
+        "Return narrative sections only. Do not output alternative spend numbers. "
+        "Do not add expansion candidates to the deterministic allocation table; discuss them "
+        "as qualitative tests until GA4 spend history exists."
     )
+
+
+def channels_without_ga4_data(brief_channels: list[str], ga4_channels: list[str]) -> list[str]:
+    return [
+        channel
+        for channel in brief_channels
+        if _has_meaningful_channel_tokens(channel)
+        and not any(_channel_matches(channel, ga4_channel) for ga4_channel in ga4_channels)
+    ]
+
+
+def _channel_matches(brief_channel: str, ga4_channel: str) -> bool:
+    ga4_text = _normalized_channel_text(ga4_channel)
+    phrase = _normalized_channel_text(brief_channel)
+    if phrase and phrase in ga4_text:
+        return True
+    return any(token in ga4_text for token in _channel_tokens(brief_channel))
+
+
+def _channel_tokens(value: str) -> list[str]:
+    aliases = {
+        "fb": ("facebook", "meta"),
+        "instagram": ("instagram", "meta", "facebook"),
+        "meta": ("meta", "facebook", "instagram"),
+    }
+    stopwords = {"ad", "ads", "channel", "channels", "campaign", "media", "paid"}
+    tokens: list[str] = []
+    for token in _normalized_channel_text(value).split():
+        if len(token) <= 2 or token in stopwords:
+            continue
+        tokens.append(token)
+        tokens.extend(aliases.get(token, ()))
+    return sorted(set(tokens))
+
+
+def _has_meaningful_channel_tokens(value: str) -> bool:
+    return bool(_channel_tokens(value))
+
+
+def _normalized_channel_text(value: str) -> str:
+    return re.sub(r"[^a-z0-9]+", " ", value.lower()).strip()
+
+
+def _budget_delta_label(brief_budget: int, current_spend: float) -> str:
+    if brief_budget <= 0:
+        return "No explicit budget; using current GA4 spend baseline"
+    delta = brief_budget - current_spend
+    if abs(delta) < 0.5:
+        return "No net change"
+    direction = "increase available" if delta > 0 else "reduction required"
+    return f"{_money(abs(delta))} {direction}"
+
+
+def _budget_warnings(warnings: list[str]) -> list[str]:
+    budget_terms = ("budget", "fitted channel", "allocation")
+    return [
+        warning for warning in warnings if any(term in warning.lower() for term in budget_terms)
+    ]
+
+
+def _parse_warnings(warnings: list[str]) -> list[str]:
+    budget_warning_set = set(_budget_warnings(warnings))
+    return [warning for warning in warnings if warning not in budget_warning_set]
+
+
+def _list_suffix(items: list[str]) -> str:
+    return f" ({', '.join(_cell(item) for item in items)})" if items else ""
+
+
+def _highlights_suffix(highlights: list[str]) -> str:
+    return f" Highlights: {'; '.join(highlights)}" if highlights else ""
 
 
 def _money(value: float | None) -> str:

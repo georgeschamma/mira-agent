@@ -8,6 +8,9 @@ from mira_agent.config import Settings
 from mira_agent.graph.context import MiraContext
 from mira_agent.graph.nodes.strategy import (
     StrategyNarrativeOutput,
+    _strategy_prompt,
+    render_budget_table,
+    render_media_plan_document,
     strategy_node,
     validate_source_claims,
 )
@@ -15,7 +18,7 @@ from mira_agent.graph.state import ParsedMediaBrief, ResearchFinding
 from mira_agent.integrations.crm import AudienceSegment
 from mira_agent.integrations.ga4 import ChannelPerformanceSummary
 from mira_agent.schemas.auth import CurrentUser
-from mira_agent.schemas.media_plan import SourceClaim
+from mira_agent.schemas.media_plan import MediaPlanGraphRequest, SourceClaim
 from mira_agent.services.mmm import ChannelAllocation
 
 
@@ -52,6 +55,7 @@ async def test_strategy_node_renders_fixed_budget_table_and_saves_document() -> 
             "executive_summary": "Increase paid social based on fixed performance math.",
             "audience_strategy": "Use the lead segment.",
             "channel_rationale": "Paid social has the strongest marginal ROI.",
+            "expansion_opportunities": "No extra channel tests are needed.",
             "sequencing": "Launch paid social first.",
             "risks": "Sparse channels need review.",
             "claims": [
@@ -145,6 +149,9 @@ async def test_strategy_node_renders_fixed_budget_table_and_saves_document() -> 
     assert "| Paid Social / linkedin/paid | 300 | 450 | 150 | optimal | 2.000 |" in result[
         "document_markdown"
     ]
+    assert "## Budget Context" in result["document_markdown"]
+    assert "- Brief budget: 600" in result["document_markdown"]
+    assert "- Current GA4 spend: 600" in result["document_markdown"]
     sheet_rows = [payload for table, payload in client.inserts if table == "action_sheets"]
     assert sheet_rows[0]["document_markdown"] == result["document_markdown"]
     assert sheet_rows[0]["recommendations"] == []
@@ -167,6 +174,7 @@ def test_strategy_narrative_requires_source_claims() -> None:
             executive_summary="Summary",
             audience_strategy="Audience",
             channel_rationale="Channels",
+            expansion_opportunities="Expansion",
             sequencing="Sequence",
             risks="Risks",
             claims=[],
@@ -234,3 +242,117 @@ async def test_strategy_fallback_is_marked_partial_and_not_model_backed(
     assert audit["model_used"] == "deterministic-fallback"
     assert sheet["model_used"] == "deterministic-fallback"
     assert run_status == "partial"
+
+
+def test_strategy_document_explains_constrained_budget_and_missing_ga4_channels() -> None:
+    state = {
+        "parsed_brief": ParsedMediaBrief(
+            org_id="org_1",
+            product="Clorox",
+            audience="B2B buyers",
+            channels=["Google", "LinkedIn", "Meta", "TikTok"],
+            budget=1000,
+            goal="increase qualified pipeline",
+            raw_brief="Product: Clorox\nBudget: 1000\nChannels: Google, LinkedIn, Meta, TikTok",
+        ),
+        "findings": [
+            ResearchFinding(
+                title="Benchmark",
+                url="https://example.com/benchmark",
+                highlights=["Retargeting tests can support saturated search channels."],
+            )
+        ],
+        "audience_segments": [],
+        "channel_summaries": [
+            ChannelPerformanceSummary(
+                channel="Paid Search | google/cpc",
+                row_count=8,
+                total_cost=1100,
+                total_response=2200,
+                unique_spend_points=8,
+                sufficient_data=True,
+                source_ref="ga4:channel:paid-search-google-cpc",
+            ),
+            ChannelPerformanceSummary(
+                channel="Paid Social | linkedin/paid",
+                row_count=8,
+                total_cost=880,
+                total_response=1800,
+                unique_spend_points=8,
+                sufficient_data=True,
+                source_ref="ga4:channel:paid-social-linkedin-paid",
+            ),
+        ],
+        "allocations": [
+            ChannelAllocation(
+                channel="Paid Search | google/cpc",
+                current_spend=1100,
+                recommended_spend=560,
+                delta=-540,
+                projected_response=1400,
+                marginal_roi=1.1,
+                zone="saturated",
+            ),
+            ChannelAllocation(
+                channel="Paid Social | linkedin/paid",
+                current_spend=880,
+                recommended_spend=440,
+                delta=-440,
+                projected_response=1200,
+                marginal_roi=1.4,
+                zone="saturated",
+            ),
+        ],
+        "warnings": [
+            "20 of the requested budget was left unallocated because fitted channels reached "
+            "supported spend caps.",
+            "Invalid date 'x'; expected YYYY-MM-DD.",
+        ],
+    }
+    narrative = StrategyNarrativeOutput(
+        executive_summary="Use the constrained budget as the baseline.",
+        audience_strategy="Use aggregate segments.",
+        channel_rationale="Both fitted channels are saturated at the constrained budget.",
+        expansion_opportunities=(
+            "Meta and TikTok are narrative-only expansion candidates because they lack GA4 "
+            "spend history."
+        ),
+        sequencing="Cut saturated channels first, then test expansion candidates.",
+        risks="Expansion candidates need measured spend history before deterministic allocation.",
+        claims=[
+            SourceClaim(
+                claim="Budget allocation is deterministic.",
+                source="performance:allocation",
+            )
+        ],
+    )
+
+    document = render_media_plan_document(
+        state=state,  # type: ignore[arg-type]
+        request=_media_request(),
+        table=render_budget_table(state["allocations"]),
+        narrative=narrative,
+    )
+    prompt = _strategy_prompt(state=state, budget_table=render_budget_table(state["allocations"]))
+
+    assert "- Brief budget: 1,000" in document
+    assert "- Current GA4 spend: 1,980" in document
+    assert "- Net budget change required: 980 reduction required" in document
+    assert "- Brief channels without GA4 data: Meta, TikTok" in document
+    assert "- Budget warnings: 20 of the requested budget was left unallocated" in document
+    assert "Invalid date 'x'; expected YYYY-MM-DD." in document
+    assert "Meta and TikTok are narrative-only expansion candidates" in document
+    assert "| Meta |" not in document
+    assert "Retargeting tests can support saturated search channels." in prompt
+    assert "Expansion candidates outside the deterministic table:\nMeta, TikTok" in prompt
+
+
+def _media_request() -> MediaPlanGraphRequest:
+    return MediaPlanGraphRequest(
+        org_id="org_1",
+        brief="Product: Clorox",
+        crm_csv_text="",
+        crm_filename="crm.csv",
+        ga4_csv_text="",
+        ga4_filename="ga4.csv",
+    )

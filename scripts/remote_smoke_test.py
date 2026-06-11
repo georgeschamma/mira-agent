@@ -23,6 +23,15 @@ EXPECTED_NODES = [
     "strategy",
     "critic",
 ]
+DEFAULT_BRIEF = (
+    "Product: MIRA\n"
+    "Audience: B2B marketers\n"
+    "Channels: google, linkedin, meta, tiktok\n"
+    "Budget: 10000\n"
+    "Goal: grow pipeline"
+)
+SMOKE_BRIEF = os.environ.get("SMOKE_BRIEF", DEFAULT_BRIEF)
+SMOKE_EVIDENCE_PREFIX = os.environ.get("SMOKE_EVIDENCE_PREFIX", "azure-smoke")
 
 
 def main() -> None:
@@ -42,13 +51,7 @@ def main() -> None:
     ga4_path = ROOT / "samples" / "ga4-demo.csv"
     data = {
         "org_id": "11111111-1111-4111-8111-111111111111",
-        "brief": (
-            "Product: MIRA\n"
-            "Audience: B2B marketers\n"
-            "Channels: google, linkedin, meta, tiktok\n"
-            "Budget: 10000\n"
-            "Goal: grow pipeline"
-        ),
+        "brief": SMOKE_BRIEF,
     }
     with crm_path.open("rb") as crm_file, ga4_path.open("rb") as ga4_file:
         files = {
@@ -107,7 +110,7 @@ def _write_evidence(
 ) -> None:
     EVIDENCE_DIR.mkdir(parents=True, exist_ok=True)
     timestamp = datetime.now(UTC).strftime("%Y%m%d-%H%M%S")
-    prefix = EVIDENCE_DIR / f"azure-smoke-{timestamp}"
+    prefix = EVIDENCE_DIR / f"{SMOKE_EVIDENCE_PREFIX}-{timestamp}"
 
     markdown = str(body["document_markdown"])
     (prefix.with_suffix(".md")).write_text(markdown, encoding="utf-8")

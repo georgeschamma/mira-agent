@@ -81,6 +81,7 @@ class MiraMediaPlanState(TypedDict):
     ga4_warnings: Annotated[list[CsvParseWarning], operator.add]
     crm_row_count: NotRequired[int]
     ga4_row_count: NotRequired[int]
+    unallocated_budget: NotRequired[float]
     document_markdown: NotRequired[str]
     document_metadata: NotRequired[dict[str, Any]]
     model_used: NotRequired[str]

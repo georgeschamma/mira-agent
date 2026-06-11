@@ -113,5 +113,6 @@ async def performance_node(state: MiraMediaPlanState, context: MiraContext) -> M
         "warnings": [warning.message for warning in result.warnings] + allocation_warnings,
         "ga4_warnings": result.warnings,
         "ga4_row_count": result.row_count,
+        "unallocated_budget": plan.unallocated_budget,
         "errors": [],
     }

@@ -25,6 +25,20 @@ async def synthesize_node(
         brief.channels, [item.channel for item in summaries]
     )
 
+    unallocated = state.get("unallocated_budget", 0.0)
+    has_saturated = any(item.zone == "saturated" for item in allocations)
+    
+    expansion_opportunities = []
+    if unallocated > 0 and has_saturated:
+        expansion_opportunities.append(
+            f"${_money(unallocated)} cannot be allocated to fitted channels; recommend narrative-only expansion tests."
+        )
+    for channel in missing_channels:
+        expansion_opportunities.append(
+            f"{channel}: requested in the brief but missing from GA4; discuss as a "
+            "narrative-only test until spend history exists."
+        )
+
     strategic_brief = StrategicBrief(
         situation_summary=_situation_summary(
             budget=brief.budget,
@@ -37,11 +51,7 @@ async def synthesize_node(
             for segment in segments[:5]
         ],
         channel_moves=[_channel_move(item) for item in allocations],
-        expansion_opportunities=[
-            f"{channel}: requested in the brief but missing from GA4; discuss as a "
-            "narrative-only test until spend history exists."
-            for channel in missing_channels
-        ],
+        expansion_opportunities=expansion_opportunities,
         key_risks=_key_risks(state=state, missing_channels=missing_channels),
         research_insights=[
             _research_insight(title=item.title, url=item.url, highlights=item.highlights)

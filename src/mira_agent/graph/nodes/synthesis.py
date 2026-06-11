@@ -15,6 +15,11 @@ from mira_agent.graph.state import (
 )
 from mira_agent.repositories.campaigns import write_audit_row
 from mira_agent.schemas.media_plan import SourceClaim
+from mira_agent.services.allocation_policy import (
+    SATURATED_MROI_CEILING,
+    ExpansionAllocation,
+    split_expansion_budget,
+)
 from mira_agent.services.mmm import ChannelAllocation
 
 
@@ -44,6 +49,7 @@ def fallback_strategic_brief(
         reverse=True,
     )
     current_spend = sum(item.total_cost for item in summaries)
+    expansion_allocations, reserve_pool = _expansion_split_for_state(state)
     missing_channels = state.get("expansion_candidates", []) or channels_without_ga4_data(
         brief.channels, [item.channel for item in summaries]
     )
@@ -56,45 +62,13 @@ def fallback_strategic_brief(
         else:
             channel_roles[a.channel] = "harvest"
             
-    # do_not_scale
-    do_not_scale = [a.channel for a in allocations if a.zone == "saturated"]
+    do_not_scale = _deterministic_do_not_scale(allocations)
     
-    expansion_tests = []
-    expansion_budget = state.get("expansion_budget", 0.0)
-    if expansion_budget > 0.01:
-        if missing_channels:
-            avg_budget = expansion_budget / len(missing_channels)
-            for ch in missing_channels:
-                expansion_tests.append(
-                    ExpansionTest(
-                        channel=ch,
-                        monthly_budget_range=f"${avg_budget * 0.8:,.0f}–${avg_budget * 1.2:,.0f}",
-                        hypothesis=(
-                            f"Testing {ch} prospecting campaigns "
-                            "to build top-of-funnel reach."
-                        ),
-                        primary_kpi="CTR / Cost per Lead",
-                        audience_fit=f"B2B target audience on {ch}",
-                        source="brief:channels",
-                    )
-                )
-        else:
-            expansion_tests.append(
-                ExpansionTest(
-                    channel="Reserve Test Pool",
-                    monthly_budget_range=(
-                        f"${expansion_budget * 0.8:,.0f}–"
-                        f"${expansion_budget * 1.2:,.0f}"
-                    ),
-                    hypothesis=(
-                        "Allocate unallocated budget to a reserve pool "
-                        "for future ad-hoc testing."
-                    ),
-                    primary_kpi="Strategic ROI / Learnings",
-                    audience_fit="General target audience",
-                    source="performance:allocation",
-                )
-            )
+    expansion_tests = _rebuild_expansion_tests(
+        state=state,
+        expansion_allocations=expansion_allocations,
+        llm_tests=[],
+    )
             
     # budget_waterfall
     budget_waterfall = []
@@ -102,7 +76,11 @@ def fallback_strategic_brief(
         if a.zone != "saturated":
             budget_waterfall.append(f"Scale {a.channel} up to optimal capacity.")
     if expansion_tests:
-        budget_waterfall.append("Deploy remaining budget to expansion tests.")
+        budget_waterfall.append(
+            "Deploy phase-1 expansion tests and hold staged reserve behind KPI gates."
+        )
+    elif reserve_pool > 0.01:
+        budget_waterfall.append("Hold expansion reserve until qualified test channels are named.")
     
     # situation_summary
     situation = _situation_summary(
@@ -149,7 +127,7 @@ def fallback_strategic_brief(
             for item in findings
         ],
         source_claims=claims,
-        expansion_opportunities=state.get("policy_notes", []) or [],
+        expansion_opportunities=_policy_notes_with_expansion(state, expansion_allocations),
     )
 
 
@@ -164,8 +142,12 @@ async def synthesize_node(
     missing_channels = state.get("expansion_candidates", []) or channels_without_ga4_data(
         brief.channels, [item.channel for item in summaries]
     )
-    policy_notes = state.get("policy_notes", [])
     expansion_budget = state.get("expansion_budget", 0.0)
+    expansion_allocations, reserve_pool = _expansion_split_for_state(state)
+    policy_notes = _policy_notes_with_expansion(state, expansion_allocations)
+    state["expansion_allocations"] = expansion_allocations
+    state["expansion_reserve_pool"] = reserve_pool
+    state["policy_notes"] = policy_notes
 
     # Goal -> planning mode mapping (deterministic seed)
     goal_lower = brief.goal.lower()
@@ -192,7 +174,7 @@ async def synthesize_node(
             f"HARD CONSTRAINT: The planning mode must be '{planning_mode}'. "
             f"Set 'planning_mode' to exactly '{planning_mode}'."
         ),
-        retries=1,
+        retries=2,
     )
 
     prompt = (
@@ -207,11 +189,13 @@ async def synthesize_node(
         f"- Policy Notes: {', '.join(policy_notes) if policy_notes else 'None'}\n"
         f"- Expansion Budget (unallocated budget): ${expansion_budget:,.2f}\n"
         f"- Expansion Candidates (channels in brief missing GA4): {', '.join(missing_channels)}\n"
+        "- Deterministic Expansion Allocations (fixed):\n"
+        f"{_expansion_allocation_block(expansion_allocations, reserve_pool)}\n"
         f"- Audience Segment hints: {', '.join(state.get('audience_channel_hints', []))}\n"
         f"- Research insights: {state.get('research_insights_data')}\n\n"
-        "Fill out all the fields in the StrategicBrief. Make sure to "
-        "generate detailed ExpansionTest plans if expansion budget is "
-        "positive and missing channels exist, utilizing any research insights."
+        "Fill out all the fields in the StrategicBrief. Budget figures per test are fixed. "
+        "For each listed expansion allocation, write only hypothesis, primary_kpi, and "
+        "audience_fit. Do not add duplicate expansion rows or change test budgets."
     )
 
     try:
@@ -219,8 +203,20 @@ async def synthesize_node(
         strategic_brief = StrategicBrief.model_validate(result.output)
         # Force the constraint
         strategic_brief.planning_mode = planning_mode
+        strategic_brief.expansion_tests = _rebuild_expansion_tests(
+            state=state,
+            expansion_allocations=expansion_allocations,
+            llm_tests=strategic_brief.expansion_tests,
+        )
+        strategic_brief.do_not_scale = _deterministic_do_not_scale(allocations)
     except Exception as exc:
         strategic_brief = fallback_strategic_brief(state, planning_mode)
+        strategic_brief.expansion_tests = _rebuild_expansion_tests(
+            state=state,
+            expansion_allocations=expansion_allocations,
+            llm_tests=strategic_brief.expansion_tests,
+        )
+        strategic_brief.do_not_scale = _deterministic_do_not_scale(allocations)
         # Log LLM synthesis node failure in errors
         errors = list(state.get("errors", []))
         errors.append(
@@ -243,7 +239,12 @@ async def synthesize_node(
         confidence="medium" if state.get("errors") else "high",
         model_used=context.settings.llm_model or "none",
     )
-    return {"strategic_brief": strategic_brief}
+    return {
+        "strategic_brief": strategic_brief,
+        "expansion_allocations": expansion_allocations,
+        "expansion_reserve_pool": reserve_pool,
+        "policy_notes": policy_notes,
+    }
 
 
 def _situation_summary(*, budget: int, current_spend: float, channel_count: int) -> str:
@@ -291,6 +292,162 @@ def _channel_move(allocation: ChannelAllocation) -> str:
     )
 
 
+def _expansion_split_for_state(
+    state: MiraMediaPlanState,
+) -> tuple[list[ExpansionAllocation], float]:
+    brief = state["parsed_brief"]
+    summaries = state.get("channel_summaries", [])
+    candidates = state.get("expansion_candidates", []) or channels_without_ga4_data(
+        brief.channels,
+        [item.channel for item in summaries],
+    )
+    insights = state.get("research_insights_data")
+    suggested = insights.suggested_test_channels if insights else []
+    max_fitted_spend = max(
+        (item.recommended_spend for item in state.get("allocations", [])),
+        default=0.0,
+    )
+    return split_expansion_budget(
+        state.get("expansion_budget", 0.0),
+        candidates,
+        state.get("audience_channel_hints", []),
+        suggested,
+        max_fitted_spend,
+    )
+
+
+def _rebuild_expansion_tests(
+    *,
+    state: MiraMediaPlanState,
+    expansion_allocations: list[ExpansionAllocation],
+    llm_tests: list[ExpansionTest],
+) -> list[ExpansionTest]:
+    by_channel: dict[str, ExpansionTest] = {}
+    for test in llm_tests:
+        key = _expansion_channel_key(test.channel)
+        if key and key not in by_channel:
+            by_channel[key] = test
+
+    tests: list[ExpansionTest] = []
+    for allocation in expansion_allocations:
+        matched = by_channel.get(_expansion_channel_key(allocation.channel))
+        tests.append(
+            ExpansionTest(
+                channel=allocation.channel,
+                monthly_budget_range=_currency(allocation.phase1_test_budget),
+                hypothesis=(
+                    matched.hypothesis
+                    if matched
+                    else (
+                        f"Test {allocation.channel} with controlled prospecting to prove "
+                        "qualified demand before releasing staged reserve."
+                    )
+                ),
+                primary_kpi=matched.primary_kpi if matched else "Qualified leads; CAC",
+                audience_fit=(
+                    matched.audience_fit
+                    if matched
+                    else f"Matches the requested audience: {state['parsed_brief'].audience}."
+                ),
+                source=_source_for_expansion_channel(allocation.channel, state),
+            )
+        )
+    return tests
+
+
+def _deterministic_do_not_scale(allocations: list[ChannelAllocation]) -> list[str]:
+    return [
+        item.channel
+        for item in allocations
+        if item.zone == "saturated" and (item.marginal_roi or 0.0) < SATURATED_MROI_CEILING
+    ]
+
+
+def _policy_notes_with_expansion(
+    state: MiraMediaPlanState,
+    expansion_allocations: list[ExpansionAllocation],
+) -> list[str]:
+    notes = list(state.get("policy_notes", []))
+    for allocation in expansion_allocations:
+        if allocation.weight_notes not in notes:
+            notes.append(allocation.weight_notes)
+    return notes
+
+
+def _expansion_allocation_block(
+    expansion_allocations: list[ExpansionAllocation],
+    reserve_pool: float,
+) -> str:
+    if not expansion_allocations:
+        return f"- No channel-specific expansion tests. Reserve pool: {_currency(reserve_pool)}."
+    lines = [
+        (
+            f"- {allocation.channel}: phase 1 {_currency(allocation.phase1_test_budget)}, "
+            f"staged reserve {_currency(allocation.staged_reserve)}. "
+            f"{allocation.weight_notes}"
+        )
+        for allocation in expansion_allocations
+    ]
+    lines.append(
+        f"- Unassigned reserve pool: {_currency(reserve_pool)}; release only after KPI gates."
+    )
+    return "\n".join(lines)
+
+
+def _source_for_expansion_channel(channel: str, state: MiraMediaPlanState) -> str:
+    terms = _source_terms_for_channel(channel)
+    for finding in state.get("findings", []):
+        haystack = " ".join([finding.title, *finding.highlights]).lower()
+        if any(term in haystack for term in terms):
+            return finding.url
+    return "brief:channels"
+
+
+def _source_terms_for_channel(channel: str) -> set[str]:
+    key = _expansion_channel_key(channel)
+    aliases = {
+        "meta": {"meta", "facebook", "instagram"},
+        "x": {"x", "twitter"},
+    }
+    return aliases.get(key, {key})
+
+
+def _expansion_channel_key(value: str) -> str:
+    text = " ".join(
+        value.lower()
+        .replace("|", " ")
+        .replace("/", " ")
+        .replace("-", " ")
+        .replace("_", " ")
+        .split()
+    )
+    aliases = {
+        "facebook": "meta",
+        "fb": "meta",
+        "instagram": "meta",
+        "ig": "meta",
+        "twitter": "x",
+    }
+    known = (
+        "meta",
+        "tiktok",
+        "linkedin",
+        "google",
+        "youtube",
+        "reddit",
+        "x",
+        "bing",
+        "programmatic",
+        "podcast",
+        "webinar",
+    )
+    for token in text.split():
+        channel = aliases.get(token, token)
+        if channel in known:
+            return channel
+    return text[:40].strip()
+
+
 def _key_risks(*, state: MiraMediaPlanState, missing_channels: list[str]) -> list[str]:
     risks = list(state.get("warnings", []))
     if missing_channels:
@@ -316,6 +473,12 @@ def _money(value: float | int | None) -> str:
     if value is None:
         return "n/a"
     return f"{value:,.0f}"
+
+
+def _currency(value: float | int | None) -> str:
+    if value is None:
+        return "n/a"
+    return f"${value:,.0f}"
 
 
 def _signed_money(value: float | None) -> str:

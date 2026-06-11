@@ -2,7 +2,10 @@ from __future__ import annotations
 
 from mira_agent.graph.state import ParsedMediaBrief
 from mira_agent.integrations.ga4 import ChannelPerformanceSummary
-from mira_agent.services.allocation_policy import apply_allocation_policy
+from mira_agent.services.allocation_policy import (
+    apply_allocation_policy,
+    split_expansion_budget,
+)
 from mira_agent.services.mmm import (
     AllocationPlan,
     ChannelAllocation,
@@ -329,3 +332,41 @@ def test_expansion_budget_no_candidates_warning() -> None:
     assert policy_plan.expansion_budget == 8020
     assert not policy_plan.expansion_candidates
     assert any("has no candidate channels from brief" in note for note in policy_plan.policy_notes)
+
+
+def test_split_expansion_budget_weights_holdback_ramp_cap_rounding_and_sum() -> None:
+    allocations, reserve_pool = split_expansion_budget(
+        expansion_budget=10000,
+        candidates=["Meta", "TikTok"],
+        audience_hints=["Meta performs well for the audience"],
+        suggested_test_channels=["Meta benchmark"],
+        max_fitted_spend=1000,
+    )
+
+    by_channel = {allocation.channel: allocation for allocation in allocations}
+
+    assert [allocation.channel for allocation in allocations] == ["meta", "tiktok"]
+    assert by_channel["meta"].phase1_test_budget == 3000
+    assert by_channel["meta"].staged_reserve == 2650
+    assert by_channel["tiktok"].phase1_test_budget == 2800
+    assert by_channel["tiktok"].staged_reserve == 0
+    assert reserve_pool == 1550
+    assert "audience hint +0.5" in by_channel["meta"].weight_notes
+    assert "research suggestion +0.5" in by_channel["meta"].weight_notes
+    total = reserve_pool + sum(
+        item.phase1_test_budget + item.staged_reserve for item in allocations
+    )
+    assert total == 10000
+
+
+def test_split_expansion_budget_no_candidates_all_reserve() -> None:
+    allocations, reserve_pool = split_expansion_budget(
+        expansion_budget=5000,
+        candidates=[],
+        audience_hints=["meta"],
+        suggested_test_channels=["tiktok"],
+        max_fitted_spend=1000,
+    )
+
+    assert allocations == []
+    assert reserve_pool == 5000

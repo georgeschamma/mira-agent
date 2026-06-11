@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
@@ -17,6 +18,18 @@ if TYPE_CHECKING:
 
 SATURATED_MROI_CEILING = 0.05
 UNALLOCATED_THRESHOLD = 0.01
+EXPANSION_HOLDBACK = 0.15
+EXPANSION_ROUNDING_INCREMENT = 50.0
+EXPANSION_PHASE1_POOL_CAP = 0.15
+EXPANSION_PHASE1_FITTED_MULTIPLE = 3.0
+
+
+@dataclass(frozen=True)
+class ExpansionAllocation:
+    channel: str
+    phase1_test_budget: float
+    staged_reserve: float
+    weight_notes: str
 
 
 @dataclass
@@ -26,6 +39,66 @@ class PolicyAllocationPlan:
     expansion_candidates: list[str]  # brief channels missing GA4
     policy_notes: list[str]  # auditable reasons per channel
     mmm_raw_allocations: list[ChannelAllocation]  # preserved for audit
+
+
+def split_expansion_budget(
+    expansion_budget: float,
+    candidates: list[str],
+    audience_hints: list[str],
+    suggested_test_channels: list[str],
+    max_fitted_spend: float,
+) -> tuple[list[ExpansionAllocation], float]:
+    pool = max(expansion_budget, 0.0)
+    clean_candidates = _unique_expansion_candidates(candidates)
+    if pool <= UNALLOCATED_THRESHOLD or not clean_candidates:
+        return [], pool
+
+    weights: list[tuple[str, float, bool, bool]] = []
+    for channel in clean_candidates:
+        audience_match = _matches_channel_signal(channel, audience_hints)
+        research_match = _matches_channel_signal(channel, suggested_test_channels)
+        weight = 1.0
+        if audience_match:
+            weight += 0.5
+        if research_match:
+            weight += 0.5
+        weights.append((channel, weight, audience_match, research_match))
+
+    total_weight = sum(weight for _, weight, _, _ in weights)
+    distributable = pool * (1.0 - EXPANSION_HOLDBACK)
+    phase1_cap = _round_down_to_increment(
+        max(
+            EXPANSION_PHASE1_POOL_CAP * pool,
+            EXPANSION_PHASE1_FITTED_MULTIPLE * max(max_fitted_spend, 0.0),
+        )
+    )
+
+    allocations: list[ExpansionAllocation] = []
+    allocated_total = 0.0
+    for channel, weight, audience_match, research_match in weights:
+        raw_share = distributable * (weight / total_weight)
+        share = _round_down_to_increment(raw_share)
+        phase1 = min(share, phase1_cap)
+        staged = max(share - phase1, 0.0)
+        allocated_total += share
+        allocations.append(
+            ExpansionAllocation(
+                channel=channel,
+                phase1_test_budget=phase1,
+                staged_reserve=staged,
+                weight_notes=_expansion_weight_note(
+                    channel=channel,
+                    weight=weight,
+                    audience_match=audience_match,
+                    research_match=research_match,
+                    phase1=phase1,
+                    staged=staged,
+                ),
+            )
+        )
+
+    reserve_pool = max(pool - allocated_total, 0.0)
+    return allocations, reserve_pool
 
 
 def apply_allocation_policy(
@@ -167,4 +240,90 @@ def apply_allocation_policy(
         expansion_candidates=expansion_candidates,
         policy_notes=policy_notes,
         mmm_raw_allocations=mmm_raw_allocations,
+    )
+
+
+def _round_down_to_increment(
+    value: float,
+    increment: float = EXPANSION_ROUNDING_INCREMENT,
+) -> float:
+    if value <= 0:
+        return 0.0
+    return math.floor(value / increment) * increment
+
+
+def _unique_expansion_candidates(candidates: list[str]) -> list[str]:
+    seen: set[str] = set()
+    unique: list[str] = []
+    for candidate in candidates:
+        channel = _normalized_channel_name(candidate)
+        if not channel or channel in seen:
+            continue
+        seen.add(channel)
+        unique.append(channel)
+    return unique
+
+
+def _matches_channel_signal(channel: str, signals: list[str]) -> bool:
+    channel_key = _normalized_channel_name(channel)
+    return any(_normalized_channel_name(signal) == channel_key for signal in signals)
+
+
+def _normalized_channel_name(value: str) -> str:
+    text = " ".join(
+        value.lower()
+        .replace("|", " ")
+        .replace("/", " ")
+        .replace("-", " ")
+        .replace("_", " ")
+        .split()
+    )
+    if not text:
+        return ""
+
+    tokens = text.split()
+    aliases = {
+        "facebook": "meta",
+        "fb": "meta",
+        "instagram": "meta",
+        "ig": "meta",
+        "twitter": "x",
+    }
+    known_channels = (
+        "meta",
+        "tiktok",
+        "linkedin",
+        "google",
+        "youtube",
+        "reddit",
+        "x",
+        "bing",
+        "programmatic",
+        "podcast",
+        "webinar",
+    )
+    for token in tokens:
+        aliased = aliases.get(token, token)
+        if aliased in known_channels:
+            return aliased
+    return text[:40].strip()
+
+
+def _expansion_weight_note(
+    *,
+    channel: str,
+    weight: float,
+    audience_match: bool,
+    research_match: bool,
+    phase1: float,
+    staged: float,
+) -> str:
+    reasons = ["base weight 1.0"]
+    if audience_match:
+        reasons.append("audience hint +0.5")
+    if research_match:
+        reasons.append("research suggestion +0.5")
+    return (
+        f"Expansion allocation for {channel}: {'; '.join(reasons)} "
+        f"= weight {weight:.1f}; phase 1 {phase1:,.0f}, staged reserve {staged:,.0f}."
     )

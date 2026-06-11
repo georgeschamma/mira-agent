@@ -3,8 +3,7 @@ from __future__ import annotations
 from mira_agent.graph.context import MiraContext
 from mira_agent.graph.state import MiraMediaPlanState
 from mira_agent.repositories.campaigns import finish_campaign_run, write_audit_row
-
-ALLOWED_SOURCE_PREFIXES = ("https://", "brief:", "crm:segment:", "ga4:", "performance:")
+from mira_agent.services.sources import validate_source_ref
 
 
 async def critic_node(state: MiraMediaPlanState, context: MiraContext) -> MiraMediaPlanState:
@@ -21,16 +20,9 @@ async def critic_node(state: MiraMediaPlanState, context: MiraContext) -> MiraMe
 
     # Check 1: Recommends scaling channel in do_not_scale
     if strategic_brief:
-        do_not_scale_channels = strategic_brief.do_not_scale or []
+        do_not_scale_channels = set(strategic_brief.do_not_scale or [])
         for a in allocations:
-            clean_ch = a.channel.replace("|", "/").strip()
-            is_dns = any(
-                clean_ch.lower() in dns.lower()
-                or dns.lower() in clean_ch.lower()
-                or a.channel.lower() in dns.lower()
-                for dns in do_not_scale_channels
-            )
-            if is_dns and a.delta > 0.5:
+            if a.channel in do_not_scale_channels and a.delta > 0.5:
                 remediations.append(
                     f"Contradiction: Recommended spend increases on "
                     f"channel '{a.channel}' by {a.delta:,.0f}, "
@@ -38,7 +30,7 @@ async def critic_node(state: MiraMediaPlanState, context: MiraContext) -> MiraMe
                 )
 
     # Check 2: expansion_budget > 0 but no expansion tests
-    if expansion_budget > 0.01:
+    if expansion_budget > 0.01 and state.get("expansion_allocations"):
         tests = strategic_brief.expansion_tests if strategic_brief else []
         if not tests:
             remediations.append(
@@ -49,10 +41,11 @@ async def critic_node(state: MiraMediaPlanState, context: MiraContext) -> MiraMe
     # Check 3: Claims missing required source prefixes
     for claim in claims:
         source = claim.get("source", "")
-        if not source.startswith(ALLOWED_SOURCE_PREFIXES):
+        try:
+            validate_source_ref(source)
+        except ValueError as exc:
             remediations.append(
-                f"Claim validation failure: Source '{source}' does "
-                f"not start with a valid prefix: {ALLOWED_SOURCE_PREFIXES}."
+                f"Claim validation failure: Source '{source}' is invalid. {exc}"
             )
 
     # Check 4: Executive summary contradicts table (cut/reduce CAC but delta positive)

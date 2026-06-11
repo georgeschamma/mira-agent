@@ -11,6 +11,7 @@ from mira_agent.graph.state import (
     StrategicBrief,
 )
 from mira_agent.schemas.auth import CurrentUser
+from mira_agent.services.allocation_policy import ExpansionAllocation
 from mira_agent.services.mmm import ChannelAllocation
 
 
@@ -111,7 +112,7 @@ async def test_critic_fails_do_not_scale_violation() -> None:
         planning_mode="growth",
         situation_summary="Situation summary",
         saturation_diagnosis="Google is saturated.",
-        do_not_scale=["Paid Search / google/cpc"],
+        do_not_scale=["Paid Search | google/cpc"],
         expansion_tests=[],
     )
     state["allocations"] = [
@@ -134,12 +135,50 @@ async def test_critic_fails_do_not_scale_violation() -> None:
 
 
 @pytest.mark.asyncio
+async def test_critic_do_not_scale_requires_exact_channel_name() -> None:
+    client = FakeRlsClient()
+    context = _test_context(client)
+    state = _base_state()
+
+    state["strategic_brief"] = StrategicBrief(
+        planning_mode="growth",
+        situation_summary="Situation summary",
+        saturation_diagnosis="Google is saturated.",
+        do_not_scale=["Paid Search / google/cpc"],
+        expansion_tests=[],
+    )
+    state["allocations"] = [
+        ChannelAllocation(
+            channel="Paid Search | google/cpc",
+            current_spend=100,
+            recommended_spend=200,
+            delta=100,
+            projected_response=150,
+            marginal_roi=0.01,
+            zone="saturated",
+        )
+    ]
+
+    result = await critic_node(state, context)
+
+    assert not result.get("critic_failed")
+
+
+@pytest.mark.asyncio
 async def test_critic_fails_missing_expansion_tests() -> None:
     client = FakeRlsClient()
     context = _test_context(client)
     state = _base_state()
 
     state["expansion_budget"] = 500.0
+    state["expansion_allocations"] = [
+        ExpansionAllocation(
+            channel="meta",
+            phase1_test_budget=100,
+            staged_reserve=325,
+            weight_notes="Expansion allocation for meta.",
+        )
+    ]
     state["strategic_brief"] = StrategicBrief(
         planning_mode="growth",
         situation_summary="Situation summary",
@@ -152,6 +191,28 @@ async def test_critic_fails_missing_expansion_tests() -> None:
 
     assert result.get("critic_failed") is True
     assert "no expansion tests were defined" in result.get("strategy_remediation", "")
+
+
+@pytest.mark.asyncio
+async def test_critic_allows_reserve_only_expansion_budget() -> None:
+    client = FakeRlsClient()
+    context = _test_context(client)
+    state = _base_state()
+
+    state["expansion_budget"] = 500.0
+    state["expansion_reserve_pool"] = 500.0
+    state["expansion_allocations"] = []
+    state["strategic_brief"] = StrategicBrief(
+        planning_mode="growth",
+        situation_summary="Situation summary",
+        saturation_diagnosis="Diagnosis",
+        do_not_scale=[],
+        expansion_tests=[],
+    )
+
+    result = await critic_node(state, context)
+
+    assert not result.get("critic_failed")
 
 
 @pytest.mark.asyncio

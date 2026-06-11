@@ -29,10 +29,13 @@ Say:
 
 > The Brief Agent starts the run, then Research, Audience, and Performance work in parallel.
 > Performance uses deterministic response-curve math for budget allocation. Saturated channels
-> with low marginal ROI are capped at their current spend, and the remaining budget ($8,020)
-> is surfaced as expansion budget. The LLM writes only the supporting sourced narrative.
+> with low marginal ROI are capped at their current spend, and the remaining budget is split by
+> deterministic policy into phase-one tests, staged reserve, and holdback. The LLM writes only
+> hypotheses and supporting sourced narrative.
 
-When the report loads, show the strategy document, budget allocation table, and the new **Recommended Tests** table showing Meta and TikTok tests. Also highlight the **Recommended Tests (Metadata Dashboard)** below the markdown.
+When the report loads, show the strategy document, budget allocation table, and the
+**Recommended Tests** table showing Meta and TikTok tests with phase-one budget and staged
+reserve. Also highlight the **Recommended Tests (Metadata Dashboard)** below the markdown.
 
 ## 1:10-1:45 - Auditability
 
@@ -43,7 +46,9 @@ Say:
 > Every agent writes an audit row with its source, confidence, model, and step index. CRM output is
 > aggregate only, and the uploaded raw rows are not persisted.
 
-Show the fixed order: `brief`, `research`, `audience`, `performance`, `synthesize`, `strategy`.
+Show the fixed order: `brief`, `research`, `audience`, `performance`, `synthesize`, `strategy`,
+`critic`. Pause on the critic row and note that it passed plan validation after checking the
+strategy output.
 
 ## 1:45-2:20 - Human Approval
 

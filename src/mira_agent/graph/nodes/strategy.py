@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import re
 import time
+from dataclasses import asdict
 
 from pydantic import BaseModel, Field
 from pydantic_ai import Agent
@@ -12,9 +13,9 @@ from mira_agent.graph.state import ExpansionTest, MiraMediaPlanState, NodeError,
 from mira_agent.repositories.campaigns import write_audit_row
 from mira_agent.repositories.media_plans import save_media_plan_document
 from mira_agent.schemas.media_plan import MediaPlanGraphRequest, SourceClaim
+from mira_agent.services.allocation_policy import ExpansionAllocation
 from mira_agent.services.mmm import ChannelAllocation, allocation_to_dict
-
-ALLOWED_SOURCE_PREFIXES = ("https://", "brief:", "crm:segment:", "ga4:", "performance:")
+from mira_agent.services.sources import validate_source_ref
 
 
 class StrategyNarrativeOutput(BaseModel):
@@ -39,19 +40,36 @@ def _load_skill(name: str) -> str:
     return ""
 
 
-def render_recommended_tests_table(tests: list[ExpansionTest]) -> str:
+def render_recommended_tests_table(
+    tests: list[ExpansionTest],
+    expansion_allocations: list[ExpansionAllocation] | None = None,
+    reserve_pool: float = 0.0,
+) -> str:
+    reserve_line = (
+        f"\n\nReserve pool: {_money(reserve_pool)} held until phase-1 tests clear KPI gates."
+        if reserve_pool > 0.01
+        else ""
+    )
     if not tests:
-        return "No recommended tests at this time."
+        return "No recommended tests at this time." + reserve_line
+    allocation_by_channel = {
+        allocation.channel: allocation for allocation in (expansion_allocations or [])
+    }
     rows = [
-        "| Channel | Monthly test budget | Hypothesis | Primary KPI | Source |",
-        "|---|---|---|---|---|",
+        (
+            "| Channel | Phase-1 monthly test budget | Staged reserve | Hypothesis | "
+            "Primary KPI | Source |"
+        ),
+        "|---|---:|---:|---|---|---|",
     ]
     for test in tests:
+        staged_reserve = allocation_by_channel.get(test.channel)
         rows.append(
-            f"| {test.channel} | {test.monthly_budget_range} | {test.hypothesis} | "
-            f"{test.primary_kpi} | {test.source} |"
+            f"| {test.channel} | {test.monthly_budget_range} | "
+            f"{_money(staged_reserve.staged_reserve) if staged_reserve else 'n/a'} | "
+            f"{test.hypothesis} | {test.primary_kpi} | {test.source} |"
         )
-    return "\n".join(rows)
+    return "\n".join(rows) + reserve_line
 
 
 async def strategy_node(state: MiraMediaPlanState, context: MiraContext) -> MiraMediaPlanState:
@@ -108,6 +126,10 @@ async def strategy_node(state: MiraMediaPlanState, context: MiraContext) -> Mira
         ),
         "expansion_tests": expansion_tests_serializable,
         "expansion_budget": state.get("expansion_budget", 0.0),
+        "expansion_allocations": [
+            asdict(item) for item in state.get("expansion_allocations", [])
+        ],
+        "expansion_reserve_pool": state.get("expansion_reserve_pool", 0.0),
         "policy_notes": state.get("policy_notes", []),
         "mmm_raw_allocations": [
             allocation_to_dict(item)
@@ -293,7 +315,11 @@ def render_media_plan_document(
 
     strategic_brief = state.get("strategic_brief")
     expansion_tests_list = strategic_brief.expansion_tests if strategic_brief else []
-    recommended_tests_table = render_recommended_tests_table(expansion_tests_list)
+    recommended_tests_table = render_recommended_tests_table(
+        expansion_tests_list,
+        state.get("expansion_allocations", []),
+        state.get("expansion_reserve_pool", 0.0),
+    )
 
     return "\n".join(
         [
@@ -409,8 +435,7 @@ def render_budget_table(allocations: list[ChannelAllocation]) -> str:
 
 def validate_source_claims(claims: list[SourceClaim]) -> None:
     for claim in claims:
-        if not claim.source.startswith(ALLOWED_SOURCE_PREFIXES):
-            raise ValueError(f"Unsupported strategy source: {claim.source}")
+        validate_source_ref(claim.source)
 
 
 def _strategy_prompt(*, state: MiraMediaPlanState, budget_table: str) -> str:

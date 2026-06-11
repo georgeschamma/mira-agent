@@ -23,7 +23,9 @@ Exa keys are committed to this repository.
    [`samples/ga4-demo.csv`](samples/ga4-demo.csv), then run the media plan.
    Generation can take 1 to 3 minutes because the workflow calls external research and narrative
    providers.
-4. Inspect the strategy document, deterministic budget table, sources, and Audit Trace tab.
+4. Inspect the strategy document, deterministic budget table, recommended tests, sources, and
+   Audit Trace tab. The current graph writes seven rows:
+   `brief -> research -> audience -> performance -> synthesize -> strategy -> critic`.
 5. Sign out, sign in as `admin@mira.local`, and approve or reject the retained document.
 6. Export the report as Markdown.
 
@@ -73,6 +75,7 @@ flowchart LR
     FastAPI -->|"Backend-only generated writes"| RLS
     FastAPI -->|"Admin approval RPC"| Approval
     Research --> Exa
+    Synthesize --> LLM
     Strategy --> LLM
     Critic --> LLM
     Brief --> Audit
@@ -103,7 +106,7 @@ flowchart LR
 
 | Evidence | Result |
 |---|---|
-| Backend compile, Ruff, unit, and API validation | `make validate`: 82 tests passed |
+| Backend compile, Ruff, unit, and API validation | `make validate`: 90 tests passed on June 11, 2026 |
 | Production frontend build | `make ui-build`: passed |
 | Frontend dependency audit | `npm audit --omit=dev`: 0 vulnerabilities |
 | Local Supabase migration reset | passed |
@@ -112,6 +115,7 @@ flowchart LR
 | Live health and DB health | healthy |
 | Live end-to-end media-plan smoke | report, audit trace, and generated writes passed |
 | Tracked reviewer CSV live smoke | 12 CRM rows, 16 GA4 rows, saved report, exact audit order passed |
+| Live 7-step media-plan smoke | `brief`, `research`, `audience`, `performance`, `synthesize`, `strategy`, `critic`; critic passed plan validation on June 11, 2026 |
 | Live authorization smoke | direct-write denial, tenant isolation, Analyst denial, Admin approval passed |
 
 ## Honest Limitations
@@ -121,3 +125,6 @@ flowchart LR
 - MIRA does not make autonomous changes to ad platforms.
 - Public signup, payments, scheduled jobs, and multi-organization Admin management are out of scope for this reference implementation.
 - Research insights extraction, synthesis, and narrative quality depend on Exa and the configured LLM provider. The critic node retries narrative generation once if internal contradictions are detected, and narrow fallbacks preserve a partial report when a provider response is unavailable or malformed.
+- Expansion-test budgets are deterministic policy outputs. The LLM can write hypotheses and
+  narrative, but final test rows are reconstructed from fixed phase-1 budgets, staged reserves,
+  and source-reference validation.

@@ -5,7 +5,7 @@ from mira_agent.graph.state import MiraMediaPlanState, NodeError
 from mira_agent.integrations.ga4 import CsvParseError, parse_ga4_csv
 from mira_agent.repositories.campaigns import write_audit_row
 from mira_agent.schemas.media_plan import MediaPlanGraphRequest
-from mira_agent.services.allocation_policy import apply_allocation_policy
+from mira_agent.services.allocation_policy import GROWTH_CAP_RATIO, apply_allocation_policy
 from mira_agent.services.mmm import (
     ChannelAllocation,
     _zone,
@@ -61,6 +61,7 @@ async def performance_node(state: MiraMediaPlanState, context: MiraContext) -> M
         curves.append(curve)
 
     total_budget = parsed_brief.budget or sum(result.current_spend.values())
+    current_total_spend = sum(result.current_spend.values())
     held_budget = sum(item.recommended_spend for item in insufficient)
     if held_budget > total_budget and held_budget > 0:
         scale = total_budget / held_budget
@@ -80,12 +81,29 @@ async def performance_node(state: MiraMediaPlanState, context: MiraContext) -> M
     else:
         fitted_budget = max(total_budget - held_budget, 0.0)
 
-    # Phase 6: MMM Tuning - Lower cap_ratio to 1.0 when all channels are saturated
+    goal_lower = parsed_brief.goal.lower()
+    planning_mode = (
+        "efficiency"
+        if any(term in goal_lower for term in ("reduce cac", "efficiency", "cut"))
+        else "growth"
+        if any(term in goal_lower for term in ("grow", "scale", "pipeline"))
+        else "balanced"
+    )
+
+    # Growth briefs with large budget headroom should allow stronger scale-up before
+    # the policy layer trims weak saturated channels back down.
     all_saturated = len(curves) > 0 and all(
         _zone(c, result.current_spend.get(c.channel, 0.0)) == "saturated"
         for c in curves
     )
-    cap_ratio = 1.0 if all_saturated else 2.0
+    if (
+        planning_mode == "growth"
+        and total_budget > 1.25 * current_total_spend
+        and current_total_spend > 0
+    ):
+        cap_ratio = GROWTH_CAP_RATIO
+    else:
+        cap_ratio = 1.0 if all_saturated else 2.0
 
     plan = optimize_allocation(
         curves=curves,
@@ -101,6 +119,7 @@ async def performance_node(state: MiraMediaPlanState, context: MiraContext) -> M
         summaries=result.summaries,
         brief_channels=parsed_brief.channels,
         curves=curves,
+        planning_mode=planning_mode,
     )
 
     allocations = policy_plan.fitted_allocations
@@ -108,8 +127,8 @@ async def performance_node(state: MiraMediaPlanState, context: MiraContext) -> M
     allocation_warnings = []
     if policy_plan.expansion_budget > 0.01:
         allocation_warnings.append(
-            f"{policy_plan.expansion_budget:,.0f} of the requested budget "
-            "was left unallocated because fitted channels reached supported spend caps."
+            f"{policy_plan.expansion_budget:,.0f} routed to expansion tests and reserves "
+            "because fitted channels reached supported spend caps."
         )
 
     await write_audit_row(
@@ -140,4 +159,3 @@ async def performance_node(state: MiraMediaPlanState, context: MiraContext) -> M
         "mmm_raw_allocations": policy_plan.mmm_raw_allocations,
         "errors": [],
     }
-

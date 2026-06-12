@@ -2,7 +2,10 @@ from __future__ import annotations
 
 from mira_agent.graph.state import ParsedMediaBrief
 from mira_agent.integrations.ga4 import ChannelPerformanceSummary
-from mira_agent.services.allocation_policy import apply_allocation_policy
+from mira_agent.services.allocation_policy import (
+    apply_allocation_policy,
+    split_expansion_budget,
+)
 from mira_agent.services.mmm import (
     AllocationPlan,
     ChannelAllocation,
@@ -329,3 +332,119 @@ def test_expansion_budget_no_candidates_warning() -> None:
     assert policy_plan.expansion_budget == 8020
     assert not policy_plan.expansion_candidates
     assert any("has no candidate channels from brief" in note for note in policy_plan.policy_notes)
+
+
+def test_split_expansion_budget_weights_holdback_ramp_cap_rounding_and_sum() -> None:
+    allocations, reserve_pool = split_expansion_budget(
+        expansion_budget=10000,
+        candidates=["Meta", "TikTok"],
+        audience_hints=["Meta performs well for the audience"],
+        suggested_test_channels=["Meta benchmark"],
+        max_fitted_spend=1000,
+    )
+
+    by_channel = {allocation.channel: allocation for allocation in allocations}
+
+    assert [allocation.channel for allocation in allocations] == ["meta", "tiktok"]
+    assert by_channel["meta"].phase1_test_budget == 3000
+    assert by_channel["meta"].staged_reserve == 2650
+    assert by_channel["tiktok"].phase1_test_budget == 2800
+    assert by_channel["tiktok"].staged_reserve == 0
+    assert reserve_pool == 1550
+    assert "audience hint +0.5" in by_channel["meta"].weight_notes
+    assert "research suggestion +0.5" in by_channel["meta"].weight_notes
+    total = reserve_pool + sum(
+        item.phase1_test_budget + item.staged_reserve for item in allocations
+    )
+    assert total == 10000
+
+
+def test_split_expansion_budget_no_candidates_all_reserve() -> None:
+    allocations, reserve_pool = split_expansion_budget(
+        expansion_budget=5000,
+        candidates=[],
+        audience_hints=["meta"],
+        suggested_test_channels=["tiktok"],
+        max_fitted_spend=1000,
+    )
+
+    assert allocations == []
+    assert reserve_pool == 5000
+
+
+def test_growth_mode_allows_search_scale_when_mroi_above_ceiling() -> None:
+    curves = [
+        _hill_curve("Paid Search | google/cpc", 8000, 1000, 1.0),
+        _hill_curve("Paid Social | linkedin/paid", 2000, 500, 1.0),
+    ]
+    raw_allocations = [
+        ChannelAllocation(
+            channel="Paid Search | google/cpc",
+            current_spend=1100,
+            recommended_spend=3300,
+            delta=2200,
+            projected_response=3000,
+            marginal_roi=0.082,
+            zone="saturated",
+        ),
+        ChannelAllocation(
+            channel="Paid Social | linkedin/paid",
+            current_spend=880,
+            recommended_spend=1760,
+            delta=880,
+            projected_response=1200,
+            marginal_roi=0.049,
+            zone="saturated",
+        ),
+    ]
+    raw_plan = AllocationPlan(
+        allocations=raw_allocations,
+        total_budget=5000,
+        baseline_total_response=2000,
+        projected_total_response=4200,
+    )
+    brief = ParsedMediaBrief(
+        org_id="org_1",
+        product="MIRA",
+        audience="B2B",
+        channels=["google", "linkedin", "meta"],
+        budget=5000,
+        goal="grow pipeline",
+        raw_brief="",
+    )
+    summaries = [
+        ChannelPerformanceSummary(
+            channel="Paid Search | google/cpc",
+            row_count=12,
+            total_cost=1100,
+            total_response=1100,
+            unique_spend_points=12,
+            sufficient_data=True,
+            source_ref="ga4:google",
+        ),
+        ChannelPerformanceSummary(
+            channel="Paid Social | linkedin/paid",
+            row_count=12,
+            total_cost=880,
+            total_response=880,
+            unique_spend_points=12,
+            sufficient_data=True,
+            source_ref="ga4:linkedin",
+        ),
+    ]
+
+    policy_plan = apply_allocation_policy(
+        raw_plan=raw_plan,
+        insufficient=[],
+        brief=brief,
+        summaries=summaries,
+        brief_channels=brief.channels,
+        curves=curves,
+        planning_mode="growth",
+    )
+
+    allocs = {a.channel: a for a in policy_plan.fitted_allocations}
+    assert allocs["Paid Search | google/cpc"].recommended_spend == 3300
+    assert allocs["Paid Social | linkedin/paid"].recommended_spend == 880
+    assert policy_plan.expansion_budget == 820
+    assert any("Growth mode active" in note for note in policy_plan.policy_notes)

@@ -1,0 +1,37 @@
+{
+  "allocations": [
+    {
+      "channel": "Paid Search | google/cpc",
+      "recommended_spend": 1300.0,
+      "zone": "saturated",
+      "confidence": "high"
+    },
+    {
+      "channel": "Paid Social | linkedin/paid",
+      "recommended_spend": 725.0,
+      "zone": "saturated",
+      "confidence": "high"
+    }
+  ],
+  "expansion_budget": 7975.0,
+  "expansion_candidates": ["meta", "tiktok"],
+  "expansion_allocations": [
+    {
+      "channel": "meta",
+      "phase1_test_budget": 3350.0,
+      "staged_reserve": 0.0
+    },
+    {
+      "channel": "tiktok",
+      "phase1_test_budget": 3350.0,
+      "staged_reserve": 0.0
+    }
+  ],
+  "expansion_reserve_pool": 1275.0,
+  "budget_waterfall": [
+    "Fitted channels (GA4-backed): $2,025 (fitted, performance:allocation).",
+    "Phase-1 test - meta: $3,350 (phase1_test, performance:allocation).",
+    "Phase-1 test - tiktok: $3,350 (phase1_test, performance:allocation).",
+    "Policy reserve pool: $1,275 (policy_reserve, performance:allocation)."
+  ]
+}

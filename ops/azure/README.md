@@ -41,6 +41,33 @@ publishes:
 <acr-name>.azurecr.io/mira-agent:phase-3-<short-git-sha>-amd64
 ```
 
+Required GitHub variables for the `production` environment:
+
+```text
+ACR_LOGIN_SERVER=<acr-name>.azurecr.io
+ACR_NAME=<acr-name>
+AZURE_CLIENT_ID=<managed-identity-or-app-registration-client-id>
+AZURE_SUBSCRIPTION_ID=<azure-subscription-id>
+AZURE_TENANT_ID=<azure-tenant-id>
+```
+
+If `AZURE_CLIENT_ID` or `AZURE_TENANT_ID` is missing, the OIDC login step fails before the image
+build starts. The Azure identity also needs federated credentials for the repository/environment
+and `AcrPush` on the target registry.
+
+Current MIRA deployment values, checked on June 11, 2026:
+
+```text
+ACR_LOGIN_SERVER=miraphase2ocxng.azurecr.io
+ACR_NAME=miraphase2ocxng
+AZURE_CLIENT_ID=7ae1e523-b238-401c-b9e7-ebca2a0df246
+AZURE_SUBSCRIPTION_ID=11bae5b2-5785-40d9-8e3d-4972f4df3eca
+AZURE_TENANT_ID=8a122edf-f8bc-4af9-abca-7a7977b9e7cf
+
+APP_NAME=mira-agent-phase-2
+RG=mira-phase-2-rg
+```
+
 Verify the tag before changing application or database permissions:
 
 ```bash
@@ -146,8 +173,10 @@ Then open `$APP_URL` in a clean browser and verify:
 
 - Login works for the seeded Analyst user.
 - Submit a free-text brief with CRM and GA4 CSV uploads and receive a sourced media-plan document.
-- Audit trace shows `brief`, `research`, `audience`, `performance`, `synthesize`, and `strategy`
-  in order.
+- Audit trace shows `brief`, `research`, `audience`, `performance`, `synthesize`, `strategy`, and
+  `critic` in order, with the critic row passing plan validation.
+- Recommended Tests show deterministic phase-one budgets, staged reserves, source references, and
+  a reserve-pool release condition.
 - Markdown export downloads a non-empty media plan.
 - Analyst approval is rejected or hidden.
 - Admin can approve or reject the pending document approval.

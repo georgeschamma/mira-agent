@@ -47,6 +47,7 @@ class BudgetAllocationResponse(BaseModel):
     projected_response: float | None
     marginal_roi: float | None
     zone: str
+    confidence: str | None = None
 
 
 class SourceClaim(BaseModel):
@@ -95,4 +96,3 @@ class MediaPlanDocument(BaseModel):
     document_markdown: str
     document_metadata: dict[str, object]
     document_status: DocumentStatus = "pending"
-

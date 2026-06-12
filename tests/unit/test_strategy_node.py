@@ -11,15 +11,18 @@ from mira_agent.graph.nodes.strategy import (
     _strategy_prompt,
     render_budget_table,
     render_media_plan_document,
+    render_recommended_tests_table,
     strategy_node,
     validate_source_claims,
 )
-from mira_agent.graph.state import ParsedMediaBrief, ResearchFinding, StrategicBrief
+from mira_agent.graph.state import ExpansionTest, ParsedMediaBrief, ResearchFinding, StrategicBrief
 from mira_agent.integrations.crm import AudienceSegment
 from mira_agent.integrations.ga4 import ChannelPerformanceSummary
 from mira_agent.schemas.auth import CurrentUser
 from mira_agent.schemas.media_plan import MediaPlanGraphRequest, SourceClaim
+from mira_agent.services.allocation_policy import ExpansionAllocation
 from mira_agent.services.mmm import ChannelAllocation
+from mira_agent.services.sources import build_source_whitelist
 
 
 class FakeRlsClient:
@@ -146,12 +149,13 @@ async def test_strategy_node_renders_fixed_budget_table_and_saves_document() -> 
 
     result = await strategy_node(state, context)  # type: ignore[arg-type]
 
-    assert "| Paid Social / linkedin/paid | 300 | 450 | 150 | optimal | 2.000 |" in result[
+    assert "| Paid Social / linkedin/paid | 300 | 450 | 150 | optimal | 2.000 | n/a |" in result[
         "document_markdown"
     ]
     assert "## Budget Context" in result["document_markdown"]
     assert "- Brief budget: 600" in result["document_markdown"]
     assert "- Current GA4 spend: 600" in result["document_markdown"]
+    assert "<" not in result["document_markdown"]
     sheet_rows = [payload for table, payload in client.inserts if table == "action_sheets"]
     assert sheet_rows[0]["document_markdown"] == result["document_markdown"]
     assert sheet_rows[0]["recommendations"] == []
@@ -160,8 +164,36 @@ async def test_strategy_node_renders_fixed_budget_table_and_saves_document() -> 
 
 
 def test_validate_source_claims_rejects_plain_http_sources() -> None:
-    with pytest.raises(ValueError, match="Unsupported strategy source"):
-        validate_source_claims([SourceClaim(claim="Insecure external source.", source="http://x.test")])
+    with pytest.raises(ValueError, match="source reference only"):
+        validate_source_claims(
+            [SourceClaim(claim="Insecure external source.", source="http://x.test")],
+            {"performance:allocation"},
+        )
+
+
+def test_validate_source_claims_rejects_prefix_valid_fabricated_refs() -> None:
+    with pytest.raises(ValueError, match="Unsupported source 'brief:situation'"):
+        validate_source_claims(
+            [SourceClaim(claim="Fabricated brief section.", source="brief:situation")],
+            {"performance:allocation", "brief:raw", "brief:channels"},
+        )
+
+
+def test_validate_source_claims_accepts_real_refs() -> None:
+    validate_source_claims(
+        [
+            SourceClaim(claim="Budget math.", source="performance:allocation"),
+            SourceClaim(claim="Research.", source="https://example.com/b2b"),
+            SourceClaim(claim="Audience.", source="crm:segment:lifecycle_stage:lead"),
+            SourceClaim(claim="GA4.", source="ga4:channel:paid-social-linkedin-paid"),
+        ],
+        {
+            "performance:allocation",
+            "https://example.com/b2b",
+            "crm:segment:lifecycle_stage:lead",
+            "ga4:channel:paid-social-linkedin-paid",
+        },
+    )
 
 
 def test_strategy_narrative_requires_source_claims() -> None:
@@ -175,6 +207,34 @@ def test_strategy_narrative_requires_source_claims() -> None:
             risks="Risks",
             claims=[],
         )
+
+
+def test_render_recommended_tests_table_includes_staged_reserve_and_reserve_pool() -> None:
+    table = render_recommended_tests_table(
+        [
+            ExpansionTest(
+                channel="meta",
+                monthly_budget_range="$3,000",
+                hypothesis="Test Meta against ICP audiences.",
+                primary_kpi="Qualified leads",
+                audience_fit="ICP buyers on Meta.",
+                source="brief:channels",
+            )
+        ],
+        [
+            ExpansionAllocation(
+                channel="meta",
+                phase1_test_budget=3000,
+                staged_reserve=2650,
+                weight_notes="Expansion allocation for meta.",
+            )
+        ],
+        reserve_pool=1550,
+    )
+
+    assert "| Channel | Phase-1 monthly test budget | Staged reserve |" in table
+    assert "| meta | $3,000 | 2,650 |" in table
+    assert "Reserve pool: 1,550 held until phase-1 tests clear KPI gates." in table
 
 
 @pytest.mark.asyncio
@@ -211,7 +271,15 @@ async def test_strategy_fallback_is_marked_partial_and_not_model_backed(
             "ga4_filename": "ga4.csv",
         },
         "findings": [],
-        "audience_segments": [],
+        "audience_segments": [
+            AudienceSegment(
+                reference="crm:segment:lifecycle_stage:lead",
+                label="Lifecycle Stage: lead",
+                count=5,
+                dimension="lifecycle_stage",
+                value="lead",
+            )
+        ],
         "channel_summaries": [],
         "allocations": [],
         "warnings": [],
@@ -234,6 +302,8 @@ async def test_strategy_fallback_is_marked_partial_and_not_model_backed(
     assert audit["confidence"] == "low"
     assert audit["model_used"] == "deterministic-fallback"
     assert sheet["model_used"] == "deterministic-fallback"
+    assert state["errors"][-1].code == "LLM_STRUCTURED_OUTPUT_UNAVAILABLE"
+    assert "forced model failure" in state["errors"][-1].message
 
 
 def test_strategy_document_explains_constrained_budget_and_missing_ga4_channels() -> None:
@@ -254,7 +324,15 @@ def test_strategy_document_explains_constrained_budget_and_missing_ga4_channels(
                 highlights=["Retargeting tests can support saturated search channels."],
             )
         ],
-        "audience_segments": [],
+        "audience_segments": [
+            AudienceSegment(
+                reference="crm:segment:lifecycle_stage:lead",
+                label="Lifecycle Stage: lead",
+                count=5,
+                dimension="lifecycle_stage",
+                value="lead",
+            )
+        ],
         "channel_summaries": [
             ChannelPerformanceSummary(
                 channel="Paid Search | google/cpc",
@@ -296,7 +374,7 @@ def test_strategy_document_explains_constrained_budget_and_missing_ga4_channels(
             ),
         ],
         "warnings": [
-            "20 of the requested budget was left unallocated because fitted channels reached "
+            "20 routed to expansion tests and reserves because fitted channels reached "
             "supported spend caps.",
             "Invalid date 'x'; expected YYYY-MM-DD.",
         ],
@@ -347,13 +425,25 @@ def test_strategy_document_explains_constrained_budget_and_missing_ga4_channels(
         table=render_budget_table(state["allocations"]),
         narrative=narrative,
     )
-    prompt = _strategy_prompt(state=state, budget_table=render_budget_table(state["allocations"]))
+    prompt = _strategy_prompt(
+        state=state,
+        budget_table=render_budget_table(state["allocations"]),
+        allowed_refs=build_source_whitelist(state),  # type: ignore[arg-type]
+    )
 
     assert "- Brief budget: 1,000" in document
+    assert "## Budget Deployment" in document
+    assert "| Fitted channels (GA4-backed) | 1,000 |" in document
+    assert "| **Total** | **1,000** | Matches brief budget |" in document
+    assert (
+        "- **Primary:** Lifecycle Stage: lead "
+        "(5 CRM records, crm:segment:lifecycle_stage:lead)"
+    ) in document
+    assert "Targeting: Retarget and seed lookalikes from the lead lifecycle cohort." in document
     assert "- Current GA4 spend: 1,980" in document
     assert "- Net budget change required: 980 reduction required" in document
     assert "- Brief channels without GA4 data: Meta, TikTok" in document
-    assert "- Budget warnings: 20 of the requested budget was left unallocated" in document
+    assert "- Budget warnings: 20 routed to expansion tests and reserves" in document
     assert "Invalid date 'x'; expected YYYY-MM-DD." in document
     assert "Meta and TikTok are narrative-only expansion candidates" in document
     assert "| Meta |" not in document
@@ -361,6 +451,8 @@ def test_strategy_document_explains_constrained_budget_and_missing_ga4_channels(
     assert "Brief budget is 1,000 versus current GA4 spend of 1,980." in prompt
     assert "Paid Search / google/cpc: 1,100 -> 560" in prompt
     assert "Retargeting tests can support saturated search channels." in prompt
+    assert "Allowed claim sources - cite only from this list:" in prompt
+    assert "https://example.com/benchmark" in prompt
     assert "Expansion candidates outside the deterministic table:\nMeta, TikTok" in prompt
 
 

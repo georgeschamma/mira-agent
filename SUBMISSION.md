@@ -115,7 +115,8 @@ flowchart LR
 | Live health and DB health | healthy |
 | Live end-to-end media-plan smoke | report, audit trace, and generated writes passed |
 | Tracked reviewer CSV live smoke | 12 CRM rows, 16 GA4 rows, saved report, exact audit order passed |
-| Live 7-step media-plan smoke | `brief`, `research`, `audience`, `performance`, `synthesize`, `strategy`, `critic`; critic passed plan validation on June 11, 2026. Evidence: [`evidence/azure-smoke-20260611-194437.summary.json`](evidence/azure-smoke-20260611-194437.summary.json), [`evidence/azure-smoke-20260611-194437.md`](evidence/azure-smoke-20260611-194437.md) |
+| Live 7-step media-plan smoke | `brief`, `research`, `audience`, `performance`, `synthesize`, `strategy`, `critic`; critic passed plan validation on June 11, 2026. Evidence: [`evidence/azure-smoke-whitelist-20260611-200931.summary.json`](evidence/azure-smoke-whitelist-20260611-200931.summary.json), [`evidence/azure-smoke-whitelist-20260611-200931.md`](evidence/azure-smoke-whitelist-20260611-200931.md) |
+| Live $100k stress smoke | 7-step audit passed with deterministic expansion rows: `meta` and `tiktok`, each `$14,700` phase 1, `$27,050` staged reserve, plus `$14,810` reserve pool. Evidence: [`evidence/azure-stress-100k-20260611-200621.summary.json`](evidence/azure-stress-100k-20260611-200621.summary.json), [`evidence/azure-stress-100k-20260611-200621.md`](evidence/azure-stress-100k-20260611-200621.md) |
 | Live authorization smoke | direct-write denial, tenant isolation, Analyst denial, Admin approval passed |
 
 ## Honest Limitations
@@ -128,3 +129,6 @@ flowchart LR
 - Expansion-test budgets are deterministic policy outputs. The LLM can write hypotheses and
   narrative, but final test rows are reconstructed from fixed phase-1 budgets, staged reserves,
   and source-reference validation.
+- Strategy claims are validated against the run's actual source whitelist. If the model keeps
+  fabricating prefix-valid references after retries, the strategy node saves a deterministic
+  fallback narrative with valid sources instead of accepting unsupported provenance.

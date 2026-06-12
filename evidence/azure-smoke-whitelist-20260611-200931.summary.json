@@ -1,0 +1,14 @@
+{
+  "action_sheet_id": "6bf97bc1-589b-460d-a584-8c594dd32419",
+  "audit_nodes": [
+    "brief",
+    "research",
+    "audience",
+    "performance",
+    "synthesize",
+    "strategy",
+    "critic"
+  ],
+  "critic_present": true,
+  "run_id": "445fd148-e7af-4b9b-87d9-9b5d51fd9b7e"
+}

@@ -293,6 +293,8 @@ async def test_strategy_fallback_is_marked_partial_and_not_model_backed(
     assert audit["confidence"] == "low"
     assert audit["model_used"] == "deterministic-fallback"
     assert sheet["model_used"] == "deterministic-fallback"
+    assert state["errors"][-1].code == "LLM_STRUCTURED_OUTPUT_UNAVAILABLE"
+    assert "forced model failure" in state["errors"][-1].message
 
 
 def test_strategy_document_explains_constrained_budget_and_missing_ga4_channels() -> None:

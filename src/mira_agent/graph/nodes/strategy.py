@@ -221,21 +221,32 @@ async def generate_strategy_narrative(
         output = StrategyNarrativeOutput.model_validate(result.output)
         validate_source_claims(output.claims, allowed_refs)
         return output
-    except Exception:
-        _record_strategy_fallback(state)
+    except Exception as exc:
+        _record_strategy_fallback(state, exc)
         return fallback_narrative(state, allowed_refs=allowed_refs)
 
 
-def _record_strategy_fallback(state: MiraMediaPlanState) -> None:
+def _record_strategy_fallback(state: MiraMediaPlanState, reason: Exception) -> None:
     errors = list(state.get("errors", []))
+    reason_text = _fallback_reason_text(reason)
+    message = "Structured LLM output was unavailable; used sourced fallback narrative."
+    if reason_text:
+        message = f"{message} Reason: {reason_text}"
     errors.append(
         NodeError(
             node="strategy",
             code="LLM_STRUCTURED_OUTPUT_UNAVAILABLE",
-            message="Structured LLM output was unavailable; used sourced fallback narrative.",
+            message=message,
         )
     )
     state["errors"] = errors
+
+
+def _fallback_reason_text(reason: Exception) -> str:
+    text = str(reason).strip()
+    if not text:
+        return reason.__class__.__name__
+    return text[:1000]
 
 
 def _strategy_fallback_used(state: MiraMediaPlanState) -> bool:

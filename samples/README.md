@@ -4,7 +4,7 @@ These synthetic CSV files exercise the complete MIRA media-plan workflow without
 customer data:
 
 - `crm-demo.csv`: fictional contacts and allowed firmographic fields only.
-- `ga4-demo.csv`: eight spend/response observations for Paid Search and Paid Social.
+- `ga4-demo.csv`: twelve weekly spend/response observations each for Paid Search and Paid Social.
 
 Use this brief for the $1,000 baseline scenario:
 
@@ -29,5 +29,8 @@ Goal: grow pipeline
 The CRM parser aggregates segments and does not return raw emails. The GA4 parser uses
 `total_revenue` as the response when it is positive, otherwise it falls back to `conversions`.
 Uploaded CSV contents are parsed in memory and are not persisted.
+
+This GA4 sample keeps Meta and TikTok absent on purpose so the $10k growth demo still exercises
+deterministic expansion tests and reserve handling for brief-requested channels without GA4 history.
 
 The live run can take 1 to 3 minutes because MIRA calls external research and narrative providers.

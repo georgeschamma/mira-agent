@@ -143,6 +143,9 @@ async def test_synthesis_agent_structured_output() -> None:
     assert strategic_brief.situation_summary == "Situation summary from LLM."
     assert strategic_brief.expansion_tests[0].channel == "tiktok"
     assert strategic_brief.expansion_tests[0].monthly_budget_range == "$150"
+    assert "Water-fill harvest" not in strategic_brief.budget_waterfall
+    assert any("Phase-1 test - tiktok" in row for row in strategic_brief.budget_waterfall)
+    assert any("Policy reserve pool" in row for row in strategic_brief.budget_waterfall)
 
 
 @pytest.mark.asyncio
@@ -224,6 +227,7 @@ async def test_synthesis_fallback_on_llm_failure() -> None:
     )
     assert len(strategic_brief.expansion_tests) == 2
     assert [test.channel for test in strategic_brief.expansion_tests] == ["linkedin", "meta"]
+    assert any("Phase-1 test - linkedin" in row for row in strategic_brief.budget_waterfall)
     assert any(err.code == "LLM_SYNTHESIS_FAILED" for err in state["errors"])
 
 
@@ -307,7 +311,10 @@ async def test_synthesis_reconstructs_duplicate_llm_expansion_tests_from_fixed_s
                 {
                     "channel": "Meta",
                     "monthly_budget_range": "$55,000-$60,000",
-                    "hypothesis": "Test Meta against ICP audiences.",
+                    "hypothesis": (
+                        "Test meta with controlled prospecting to prove qualified demand "
+                        "before releasing staged reserve."
+                    ),
                     "primary_kpi": "Qualified leads",
                     "audience_fit": "ICP buyers on Meta.",
                     "source": "brief:channels",
@@ -395,6 +402,11 @@ async def test_synthesis_reconstructs_duplicate_llm_expansion_tests_from_fixed_s
         "$14,700",
         "$14,700",
     ]
+    assert (
+        "controlled prospecting to prove qualified demand"
+        not in strategic_brief.expansion_tests[0].hypothesis
+    )
+    assert "Meta advertising benchmark" in strategic_brief.expansion_tests[0].hypothesis
     assert result["expansion_reserve_pool"] == 14810
     assert [item.staged_reserve for item in result["expansion_allocations"]] == [27050, 27050]
     total = result["expansion_reserve_pool"] + sum(

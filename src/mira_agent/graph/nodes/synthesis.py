@@ -20,6 +20,16 @@ from mira_agent.services.allocation_policy import (
     ExpansionAllocation,
     split_expansion_budget,
 )
+from mira_agent.services.budget_waterfall import (
+    WaterfallRow,
+    build_budget_waterfall,
+    describe_budget_waterfall,
+)
+from mira_agent.services.expansion_hypothesis import (
+    GENERIC_HYPOTHESIS_RE,
+    build_expansion_audience_fit,
+    build_expansion_hypothesis,
+)
 from mira_agent.services.mmm import ChannelAllocation
 
 
@@ -70,17 +80,13 @@ def fallback_strategic_brief(
         llm_tests=[],
     )
             
-    # budget_waterfall
-    budget_waterfall = []
-    for a in allocations:
-        if a.zone != "saturated":
-            budget_waterfall.append(f"Scale {a.channel} up to optimal capacity.")
-    if expansion_tests:
-        budget_waterfall.append(
-            "Deploy phase-1 expansion tests and hold staged reserve behind KPI gates."
+    budget_waterfall = describe_budget_waterfall(
+        _budget_waterfall_for_state(
+            state=state,
+            expansion_allocations=expansion_allocations,
+            reserve_pool=reserve_pool,
         )
-    elif reserve_pool > 0.01:
-        budget_waterfall.append("Hold expansion reserve until qualified test channels are named.")
+    )
     
     # situation_summary
     situation = _situation_summary(
@@ -190,7 +196,7 @@ async def synthesize_node(
         f"- Expansion Budget (unallocated budget): ${expansion_budget:,.2f}\n"
         f"- Expansion Candidates (channels in brief missing GA4): {', '.join(missing_channels)}\n"
         "- Deterministic Expansion Allocations (fixed):\n"
-        f"{_expansion_allocation_block(expansion_allocations, reserve_pool)}\n"
+        f"{_expansion_allocation_block(expansion_allocations, reserve_pool, state)}\n"
         f"- Audience Segment hints: {', '.join(state.get('audience_channel_hints', []))}\n"
         f"- Research insights: {state.get('research_insights_data')}\n\n"
         "Fill out all the fields in the StrategicBrief. Budget figures per test are fixed. "
@@ -209,6 +215,13 @@ async def synthesize_node(
             llm_tests=strategic_brief.expansion_tests,
         )
         strategic_brief.do_not_scale = _deterministic_do_not_scale(allocations)
+        strategic_brief.budget_waterfall = describe_budget_waterfall(
+            _budget_waterfall_for_state(
+                state=state,
+                expansion_allocations=expansion_allocations,
+                reserve_pool=reserve_pool,
+            )
+        )
     except Exception as exc:
         strategic_brief = fallback_strategic_brief(state, planning_mode)
         strategic_brief.expansion_tests = _rebuild_expansion_tests(
@@ -217,6 +230,13 @@ async def synthesize_node(
             llm_tests=strategic_brief.expansion_tests,
         )
         strategic_brief.do_not_scale = _deterministic_do_not_scale(allocations)
+        strategic_brief.budget_waterfall = describe_budget_waterfall(
+            _budget_waterfall_for_state(
+                state=state,
+                expansion_allocations=expansion_allocations,
+                reserve_pool=reserve_pool,
+            )
+        )
         # Log LLM synthesis node failure in errors
         errors = list(state.get("errors", []))
         errors.append(
@@ -316,6 +336,20 @@ def _expansion_split_for_state(
     )
 
 
+def _budget_waterfall_for_state(
+    *,
+    state: MiraMediaPlanState,
+    expansion_allocations: list[ExpansionAllocation],
+    reserve_pool: float,
+) -> list[WaterfallRow]:
+    return build_budget_waterfall(
+        brief_budget=state["parsed_brief"].budget,
+        fitted_total=sum(item.recommended_spend for item in state.get("allocations", [])),
+        expansion_allocations=expansion_allocations,
+        reserve_pool=reserve_pool,
+    )
+
+
 def _rebuild_expansion_tests(
     *,
     state: MiraMediaPlanState,
@@ -331,23 +365,32 @@ def _rebuild_expansion_tests(
     tests: list[ExpansionTest] = []
     for allocation in expansion_allocations:
         matched = by_channel.get(_expansion_channel_key(allocation.channel))
+        use_fallback_hypothesis = (
+            matched is None or GENERIC_HYPOTHESIS_RE.search(matched.hypothesis)
+        )
         tests.append(
             ExpansionTest(
                 channel=allocation.channel,
                 monthly_budget_range=_currency(allocation.phase1_test_budget),
                 hypothesis=(
                     matched.hypothesis
-                    if matched
-                    else (
-                        f"Test {allocation.channel} with controlled prospecting to prove "
-                        "qualified demand before releasing staged reserve."
+                    if matched and not use_fallback_hypothesis
+                    else build_expansion_hypothesis(
+                        allocation.channel,
+                        state.get("audience_segments", []),
+                        state.get("findings", []),
+                        state["parsed_brief"].audience,
                     )
                 ),
                 primary_kpi=matched.primary_kpi if matched else "Qualified leads; CAC",
                 audience_fit=(
                     matched.audience_fit
-                    if matched
-                    else f"Matches the requested audience: {state['parsed_brief'].audience}."
+                    if matched and not use_fallback_hypothesis
+                    else build_expansion_audience_fit(
+                        allocation.channel,
+                        state.get("audience_segments", []),
+                        state["parsed_brief"].audience,
+                    )
                 ),
                 source=_source_for_expansion_channel(allocation.channel, state),
             )
@@ -377,6 +420,7 @@ def _policy_notes_with_expansion(
 def _expansion_allocation_block(
     expansion_allocations: list[ExpansionAllocation],
     reserve_pool: float,
+    state: MiraMediaPlanState,
 ) -> str:
     if not expansion_allocations:
         return f"- No channel-specific expansion tests. Reserve pool: {_currency(reserve_pool)}."
@@ -384,7 +428,8 @@ def _expansion_allocation_block(
         (
             f"- {allocation.channel}: phase 1 {_currency(allocation.phase1_test_budget)}, "
             f"staged reserve {_currency(allocation.staged_reserve)}. "
-            f"{allocation.weight_notes}"
+            f"{allocation.weight_notes} "
+            f"Research cue: {_expansion_research_cue(allocation.channel, state)}"
         )
         for allocation in expansion_allocations
     ]
@@ -392,6 +437,24 @@ def _expansion_allocation_block(
         f"- Unassigned reserve pool: {_currency(reserve_pool)}; release only after KPI gates."
     )
     return "\n".join(lines)
+
+
+def _expansion_research_cue(channel: str, state: MiraMediaPlanState) -> str:
+    finding = _matching_expansion_finding(channel, state)
+    if finding is None:
+        return "none"
+    highlight = finding.highlights[0] if finding.highlights else finding.title
+    return highlight[:120]
+
+
+def _matching_expansion_finding(channel: str, state: MiraMediaPlanState):
+    terms = _source_terms_for_channel(channel)
+    for finding in state.get("findings", []):
+        haystack = " ".join([finding.title, *finding.highlights]).lower()
+        if any(term in haystack for term in terms):
+            return finding
+    findings = state.get("findings", [])
+    return findings[0] if findings else None
 
 
 def _source_for_expansion_channel(channel: str, state: MiraMediaPlanState) -> str:

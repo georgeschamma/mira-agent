@@ -57,6 +57,7 @@ class ChannelAllocation:
     projected_response: float | None
     marginal_roi: float | None
     zone: Zone
+    confidence: Confidence | None = None
 
 
 @dataclass(frozen=True)
@@ -319,6 +320,7 @@ def optimize_allocation(
                 projected_response=projected,
                 marginal_roi=marginal_roi(c, rec, value_of(c.channel)),
                 zone=_zone(c, rec),
+                confidence=c.confidence,
             )
         )
 
@@ -341,6 +343,7 @@ def insufficient_allocation(channel: str, current_spend: float) -> ChannelAlloca
         projected_response=None,
         marginal_roi=None,
         zone="insufficient_data",
+        confidence="low",
     )
 
 
@@ -363,6 +366,7 @@ def allocation_to_dict(allocation: ChannelAllocation) -> dict[str, float | str |
         "projected_response": finite_or_none(allocation.projected_response),
         "marginal_roi": finite_or_none(allocation.marginal_roi),
         "zone": allocation.zone,
+        "confidence": allocation.confidence,
     }
 
 

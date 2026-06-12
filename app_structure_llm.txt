@@ -49,14 +49,18 @@ Phase 3 media-plan flow:
 - graph/nodes/audience.py parses CRM CSV in memory, outputs aggregate segments and maps them to hints, marks
   pii_accessed=true, and writes audit step 2.
 - graph/nodes/performance.py parses GA4 CSV, calls services/mmm.py for deterministic allocation,
-  applies services/allocation_policy.py layer, and writes audit step 3.
+  applies services/allocation_policy.py layer with growth/efficiency mode handling, and writes audit step 3.
 - graph/nodes/synthesis.py merges parsed brief, research highlights, audience segments/hints, budget
-  context, allocation/policy rows, deterministic expansion allocations, and missing-GA4 channels
-  into StrategicBrief using PydanticAI, then writes audit step 4.
-- graph/nodes/strategy.py renders the deterministic budget table in code, uses PydanticAI for
+  context, allocation/policy rows, deterministic expansion allocations, budget waterfall rows, and
+  missing-GA4 channels into StrategicBrief using PydanticAI, then writes audit step 4.
+- graph/nodes/strategy.py renders the deterministic budget deployment and allocation tables in code, uses PydanticAI for
   sourced narrative guided by the StrategicBrief, saves action_sheets.document_markdown/document_metadata/document_status,
   creates recommendation_id=document approval, and writes audit step 5.
 - graph/nodes/critic.py validates plan consistency, triggers one retry if contradictions exist, writes audit step 6, and saves run status.
+- services/budget_waterfall.py builds deterministic budget deployment rows from fitted spend, phase-1 tests,
+  staged reserve, and policy reserve.
+- services/expansion_hypothesis.py rebuilds non-generic expansion-test hypotheses and audience-fit text from
+  CRM segments and research findings when the model response is missing or boilerplate.
 
 Report/audit flow:
 - routers/reports.py requires a Supabase user and delegates to repositories/reports.py.

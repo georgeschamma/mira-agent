@@ -149,12 +149,13 @@ async def test_strategy_node_renders_fixed_budget_table_and_saves_document() -> 
 
     result = await strategy_node(state, context)  # type: ignore[arg-type]
 
-    assert "| Paid Social / linkedin/paid | 300 | 450 | 150 | optimal | 2.000 |" in result[
+    assert "| Paid Social / linkedin/paid | 300 | 450 | 150 | optimal | 2.000 | n/a |" in result[
         "document_markdown"
     ]
     assert "## Budget Context" in result["document_markdown"]
     assert "- Brief budget: 600" in result["document_markdown"]
     assert "- Current GA4 spend: 600" in result["document_markdown"]
+    assert "<" not in result["document_markdown"]
     sheet_rows = [payload for table, payload in client.inserts if table == "action_sheets"]
     assert sheet_rows[0]["document_markdown"] == result["document_markdown"]
     assert sheet_rows[0]["recommendations"] == []
@@ -270,7 +271,15 @@ async def test_strategy_fallback_is_marked_partial_and_not_model_backed(
             "ga4_filename": "ga4.csv",
         },
         "findings": [],
-        "audience_segments": [],
+        "audience_segments": [
+            AudienceSegment(
+                reference="crm:segment:lifecycle_stage:lead",
+                label="Lifecycle Stage: lead",
+                count=5,
+                dimension="lifecycle_stage",
+                value="lead",
+            )
+        ],
         "channel_summaries": [],
         "allocations": [],
         "warnings": [],
@@ -315,7 +324,15 @@ def test_strategy_document_explains_constrained_budget_and_missing_ga4_channels(
                 highlights=["Retargeting tests can support saturated search channels."],
             )
         ],
-        "audience_segments": [],
+        "audience_segments": [
+            AudienceSegment(
+                reference="crm:segment:lifecycle_stage:lead",
+                label="Lifecycle Stage: lead",
+                count=5,
+                dimension="lifecycle_stage",
+                value="lead",
+            )
+        ],
         "channel_summaries": [
             ChannelPerformanceSummary(
                 channel="Paid Search | google/cpc",
@@ -357,7 +374,7 @@ def test_strategy_document_explains_constrained_budget_and_missing_ga4_channels(
             ),
         ],
         "warnings": [
-            "20 of the requested budget was left unallocated because fitted channels reached "
+            "20 routed to expansion tests and reserves because fitted channels reached "
             "supported spend caps.",
             "Invalid date 'x'; expected YYYY-MM-DD.",
         ],
@@ -415,10 +432,18 @@ def test_strategy_document_explains_constrained_budget_and_missing_ga4_channels(
     )
 
     assert "- Brief budget: 1,000" in document
+    assert "## Budget Deployment" in document
+    assert "| Fitted channels (GA4-backed) | 1,000 |" in document
+    assert "| **Total** | **1,000** | Matches brief budget |" in document
+    assert (
+        "- **Primary:** Lifecycle Stage: lead "
+        "(5 CRM records, crm:segment:lifecycle_stage:lead)"
+    ) in document
+    assert "Targeting: Retarget and seed lookalikes from the lead lifecycle cohort." in document
     assert "- Current GA4 spend: 1,980" in document
     assert "- Net budget change required: 980 reduction required" in document
     assert "- Brief channels without GA4 data: Meta, TikTok" in document
-    assert "- Budget warnings: 20 of the requested budget was left unallocated" in document
+    assert "- Budget warnings: 20 routed to expansion tests and reserves" in document
     assert "Invalid date 'x'; expected YYYY-MM-DD." in document
     assert "Meta and TikTok are narrative-only expansion candidates" in document
     assert "| Meta |" not in document

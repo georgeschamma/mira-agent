@@ -489,6 +489,27 @@ function App() {
                       </div>
                     </div>
                   ) : null}
+                  {report.document_metadata?.strategic_brief && Array.isArray((report.document_metadata.strategic_brief as any).budget_waterfall) && (report.document_metadata.strategic_brief as any).budget_waterfall.length > 0 ? (
+                    <div className="recommended-tests-metadata" style={{ marginTop: "32px" }}>
+                      <h3 style={{ fontSize: "1.2rem", fontWeight: "600", marginBottom: "12px" }}>Budget Deployment (Metadata)</h3>
+                      <div className="table-responsive" style={{ overflowX: "auto" }}>
+                        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.9rem" }}>
+                          <thead>
+                            <tr style={{ textAlign: "left", borderBottom: "2px solid var(--border-color, #e2e8f0)", background: "rgba(0,0,0,0.02)" }}>
+                              <th style={{ padding: "12px 8px" }}>Deployment Step</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {((report.document_metadata.strategic_brief as any).budget_waterfall as string[]).map((row, index) => (
+                              <tr key={index} style={{ borderBottom: "1px solid var(--border-color, #e2e8f0)" }}>
+                                <td style={{ padding: "12px 8px", color: "var(--text-muted, #4a5568)" }}>{row}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  ) : null}
                 </div>
               ) : (
                 <div className="recommendation-list">

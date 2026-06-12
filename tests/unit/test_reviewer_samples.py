@@ -13,6 +13,7 @@ def test_reviewer_demo_csvs_parse_without_warnings() -> None:
     assert crm_result.row_count == 12
     assert crm_result.warnings == []
     assert crm_result.segments
-    assert ga4_result.row_count == 16
+    assert ga4_result.row_count == 24
     assert ga4_result.warnings == []
+    assert len(ga4_result.summaries) == 2
     assert all(summary.sufficient_data for summary in ga4_result.summaries)

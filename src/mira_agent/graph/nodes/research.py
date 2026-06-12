@@ -11,6 +11,7 @@ from mira_agent.graph.state import (
 )
 from mira_agent.repositories.campaigns import write_audit_row
 from mira_agent.schemas.analyze import AnalyzeRequest
+from mira_agent.services.allocation_policy import _normalized_channel_name
 
 
 def build_research_query(request: AnalyzeRequest) -> str:
@@ -108,8 +109,38 @@ async def research_node(state: MiraState, context: MiraContext) -> MiraState:
     )
 
     insights = await extract_research_insights(findings, context)
+    insights.suggested_test_channels = _merge_suggested_test_channels(
+        insights.suggested_test_channels,
+        findings,
+    )
 
     return {"findings": findings, "research_insights_data": insights, "errors": errors}
+
+
+def _merge_suggested_test_channels(
+    existing: list[str],
+    findings: list[ResearchFinding],
+) -> list[str]:
+    merged: list[str] = []
+    seen: set[str] = set()
+    for value in [*existing, *_suggested_channels_from_findings(findings)]:
+        channel = _normalized_channel_name(value)
+        if not channel or channel in seen:
+            continue
+        seen.add(channel)
+        merged.append(channel)
+    return merged
+
+
+def _suggested_channels_from_findings(findings: list[ResearchFinding]) -> list[str]:
+    known = ("meta", "facebook", "instagram", "tiktok", "linkedin", "youtube", "reddit")
+    channels: list[str] = []
+    for finding in findings:
+        haystack = " ".join([finding.title, *finding.highlights]).lower()
+        for token in known:
+            if token in haystack:
+                channels.append(token)
+    return channels
 
 
 async def _write_research_audit(
@@ -133,4 +164,3 @@ async def _write_research_audit(
         confidence=confidence,
         model_used="none",
     )
-

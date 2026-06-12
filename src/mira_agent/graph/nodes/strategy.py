@@ -14,6 +14,7 @@ from mira_agent.repositories.campaigns import write_audit_row
 from mira_agent.repositories.media_plans import save_media_plan_document
 from mira_agent.schemas.media_plan import MediaPlanGraphRequest, SourceClaim
 from mira_agent.services.allocation_policy import ExpansionAllocation
+from mira_agent.services.budget_waterfall import WaterfallRow, build_budget_waterfall
 from mira_agent.services.mmm import ChannelAllocation, allocation_to_dict
 from mira_agent.services.sources import (
     build_source_whitelist,
@@ -97,6 +98,7 @@ async def strategy_node(state: MiraMediaPlanState, context: MiraContext) -> Mira
         table=table,
         narrative=narrative,
     )
+    document = _sanitize_markdown(document)
     processing_ms = int((time.perf_counter() - started_at) * 1000)
 
     strategic_brief = state.get("strategic_brief")
@@ -344,6 +346,7 @@ def render_media_plan_document(
     warnings = state.get("warnings", [])
     claims = "\n".join(f"- {claim.claim} ({claim.source})" for claim in narrative.claims)
     budget_context = render_budget_context(state)
+    budget_waterfall = render_budget_waterfall_table(state)
     parse_warnings = _parse_warnings(warnings)
     warning_lines = (
         "\n".join(f"- {warning}" for warning in parse_warnings) if parse_warnings else "- None"
@@ -356,6 +359,7 @@ def render_media_plan_document(
         state.get("expansion_allocations", []),
         state.get("expansion_reserve_pool", 0.0),
     )
+    audience_strategy = render_audience_strategy_section(state, narrative.audience_strategy)
 
     return "\n".join(
         [
@@ -363,6 +367,9 @@ def render_media_plan_document(
             "",
             "## Executive Summary",
             narrative.executive_summary,
+            "",
+            "## Budget Deployment",
+            budget_waterfall,
             "",
             "## Budget Context",
             budget_context,
@@ -374,7 +381,7 @@ def render_media_plan_document(
             recommended_tests_table,
             "",
             "## Audience Strategy",
-            narrative.audience_strategy,
+            audience_strategy,
             "",
             "## Channel Rationale",
             narrative.channel_rationale,
@@ -399,6 +406,48 @@ def render_media_plan_document(
             f"- GA4 file: {request.ga4_filename}",
         ]
     ).strip() + "\n"
+
+
+def render_budget_waterfall_table(state: MiraMediaPlanState) -> str:
+    rows = _budget_waterfall_rows(state)
+    if not rows:
+        return "No budget deployment waterfall was available."
+
+    table_rows = [
+        "| Bucket | Amount | Notes |",
+        "|---|---:|---|",
+    ]
+    for row in rows:
+        table_rows.append(
+            f"| {_cell(row.label)} | {_money(row.amount)} | "
+            f"{_waterfall_note(row)} |"
+        )
+    total = sum(row.amount for row in rows)
+    brief_budget = state["parsed_brief"].budget
+    table_rows.append(
+        f"| **Total** | **{_money(total)}** | "
+        f"{'Matches brief budget' if abs(total - brief_budget) <= 1 else 'Review budget sum'} |"
+    )
+    return "\n".join(table_rows)
+
+
+def _budget_waterfall_rows(state: MiraMediaPlanState) -> list[WaterfallRow]:
+    return build_budget_waterfall(
+        brief_budget=state["parsed_brief"].budget,
+        fitted_total=sum(item.recommended_spend for item in state.get("allocations", [])),
+        expansion_allocations=state.get("expansion_allocations", []),
+        reserve_pool=state.get("expansion_reserve_pool", 0.0),
+    )
+
+
+def _waterfall_note(row: WaterfallRow) -> str:
+    notes = {
+        "fitted": "GA4-backed deterministic allocation",
+        "phase1_test": "Released immediately for controlled test",
+        "staged_reserve": "Released only after KPI gates clear",
+        "policy_reserve": "Held until phase-1 gates clear",
+    }
+    return f"{notes.get(row.category, row.category)} ({row.audit_ref})"
 
 
 def render_budget_context(state: MiraMediaPlanState) -> str:
@@ -449,7 +498,39 @@ def render_budget_context(state: MiraMediaPlanState) -> str:
         lines.append(
             "- Budget warnings: " + " ".join(_cell(warning) for warning in budget_warnings)
         )
+    if any(item.confidence == "low" for item in allocations):
+        lines.append("- Allocation confidence note: Low confidence - fewer than 12 weekly points.")
     return "\n".join(lines)
+
+
+def render_audience_strategy_section(state: MiraMediaPlanState, narrative: str) -> str:
+    segments = sorted(
+        state.get("audience_segments", []),
+        key=lambda item: item.count,
+        reverse=True,
+    )[:3]
+    if not segments:
+        return narrative
+
+    lines = [narrative]
+    for index, segment in enumerate(segments):
+        tier = "Primary" if index == 0 else "Secondary"
+        lines.append(
+            f"- **{tier}:** {_cell(segment.label)} "
+            f"({segment.count} CRM records, {segment.reference})"
+        )
+        lines.append(f"  - Targeting: {_segment_targeting_recommendation(segment)}")
+    return "\n".join(lines)
+
+
+def _segment_targeting_recommendation(segment) -> str:
+    dimension = segment.dimension.lower()
+    value = segment.value
+    if "company_size" in dimension:
+        return f"Use lookalikes and firmographic targeting around {value} accounts."
+    if "lifecycle" in dimension:
+        return f"Retarget and seed lookalikes from the {value} lifecycle cohort."
+    return f"Build paid targeting around the '{value}' segment and matched CRM audiences."
 
 
 def render_budget_table(allocations: list[ChannelAllocation]) -> str:
@@ -457,14 +538,18 @@ def render_budget_table(allocations: list[ChannelAllocation]) -> str:
         return "No fitted channel allocation was available. Review GA4 spend history."
 
     rows = [
-        "| Channel | Current Spend | Recommended Spend | Delta | Zone | Marginal ROI |",
-        "|---|---:|---:|---:|---|---:|",
+        (
+            "| Channel | Current Spend | Recommended Spend | Delta | Zone | "
+            "Marginal ROI | Confidence |"
+        ),
+        "|---|---:|---:|---:|---|---:|---|",
     ]
     for allocation in allocations:
         rows.append(
             f"| {_cell(allocation.channel)} | {_money(allocation.current_spend)} | "
             f"{_money(allocation.recommended_spend)} | {_money(allocation.delta)} | "
-            f"{allocation.zone} | {_number(allocation.marginal_roi)} |"
+            f"{allocation.zone} | {_number(allocation.marginal_roi)} | "
+            f"{allocation.confidence or 'n/a'} |"
         )
     return "\n".join(rows)
 
@@ -730,3 +815,8 @@ def _number(value: float | None) -> str:
 
 def _cell(value: str) -> str:
     return value.replace("|", "/")
+
+
+def _sanitize_markdown(value: str) -> str:
+    value = re.sub(r"</?[^>\n]+>", "", value)
+    return value.strip() + "\n"

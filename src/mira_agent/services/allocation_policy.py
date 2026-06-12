@@ -22,6 +22,7 @@ EXPANSION_HOLDBACK = 0.15
 EXPANSION_ROUNDING_INCREMENT = 50.0
 EXPANSION_PHASE1_POOL_CAP = 0.15
 EXPANSION_PHASE1_FITTED_MULTIPLE = 3.0
+GROWTH_CAP_RATIO = 3.0
 
 
 @dataclass(frozen=True)
@@ -108,6 +109,7 @@ def apply_allocation_policy(
     summaries: list[ChannelPerformanceSummary],
     brief_channels: list[str],
     curves: list[ChannelCurve],
+    planning_mode: str = "balanced",
 ) -> PolicyAllocationPlan:
     # Preserve raw allocations for audit
     mmm_raw_allocations = list(raw_plan.allocations) + list(insufficient)
@@ -143,12 +145,23 @@ def apply_allocation_policy(
     # Rule 2: Budget cap mode (brief budget < current spend)
     current_total_spend = sum(a.current_spend for a in raw_plan.allocations + insufficient)
     is_budget_cap = brief.budget > 0 and brief.budget < current_total_spend
+    growth_mode = (
+        planning_mode == "growth"
+        and brief.budget > 1.25 * current_total_spend
+        and current_total_spend > 0
+    )
 
     target_budget = brief.budget if brief.budget > 0 else current_total_spend
     if is_budget_cap:
         policy_notes.append(
             f"Budget cap active ({brief.budget:,.0f} < "
             f"{current_total_spend:,.0f}). Trimming lowest mROI channels."
+        )
+    elif growth_mode:
+        policy_notes.append(
+            f"Growth mode active ({brief.budget:,.0f} > 125% of current spend "
+            f"{current_total_spend:,.0f}); strong mROI channels can scale up to "
+            f"{GROWTH_CAP_RATIO:.1f}x."
         )
 
     # Trim if total spend exceeds the target budget
@@ -218,6 +231,7 @@ def apply_allocation_policy(
                 projected_response=response_at(curve, rec),
                 marginal_roi=marginal_roi(curve, rec),
                 zone=_zone(curve, rec),
+                confidence=curve.confidence,
             )
         )
     for a in insufficient:
@@ -231,6 +245,7 @@ def apply_allocation_policy(
                 projected_response=None,
                 marginal_roi=None,
                 zone=a.zone,
+                confidence=a.confidence,
             )
         )
 

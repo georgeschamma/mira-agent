@@ -122,7 +122,7 @@ parameterized Azure Container Apps smoke-deploy template.
 
 ## Security
 
-See [`SECURITY.md`](SECURITY.md).
+See [`SECURITY.md`](SECURITY.md) and [`docs/responsible-ai.md`](docs/responsible-ai.md).
 
 ## License
 

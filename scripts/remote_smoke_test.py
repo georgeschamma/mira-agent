@@ -32,6 +32,7 @@ DEFAULT_BRIEF = (
 )
 SMOKE_BRIEF = os.environ.get("SMOKE_BRIEF", DEFAULT_BRIEF)
 SMOKE_EVIDENCE_PREFIX = os.environ.get("SMOKE_EVIDENCE_PREFIX", "azure-smoke")
+SMOKE_TIMEOUT_SECONDS = float(os.environ.get("SMOKE_TIMEOUT_SECONDS", "420"))
 
 
 def main() -> None:
@@ -63,7 +64,7 @@ def main() -> None:
             data=data,
             files=files,
             headers=headers,
-            timeout=180.0,
+            timeout=SMOKE_TIMEOUT_SECONDS,
         )
     print(f"Media Plan Status: {resp.status_code}")
     if resp.status_code != 200:

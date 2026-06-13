@@ -1,0 +1,32 @@
+{
+  "action_sheet_id": "ed9e1e90-2afa-4774-8f65-d05e3baea49e",
+  "audit_nodes": [
+    "brief",
+    "research",
+    "audience",
+    "performance",
+    "synthesize",
+    "strategy",
+    "critic"
+  ],
+  "claim": "brief + CRM + GA4 -> sourced, audited media plan in 3.0 minutes",
+  "commit_sha": "5e95e7457f9f81d84e7778515a9be2d174330928",
+  "completed_at": "2026-06-12T19:24:57.815473+00:00",
+  "deployed_image": "miraphase2ocxng.azurecr.io/mira-agent:phase-3-5e95e74-amd64",
+  "deployed_revision": "mira-agent-phase-2--0000014",
+  "method": "Production smoke posted the reviewer CRM CSV, GA4 CSV, and growth brief to /api/media-plan, then fetched /api/runs/{run_id}/audit after report render.",
+  "node_timestamps": {
+    "audience": "2026-06-12T19:21:58.993144+00:00",
+    "brief": "2026-06-12T19:21:58.773565+00:00",
+    "critic": "2026-06-12T19:24:58.142583+00:00",
+    "performance": "2026-06-12T19:21:58.994484+00:00",
+    "research": "2026-06-12T19:21:59.25152+00:00",
+    "strategy": "2026-06-12T19:24:57.739366+00:00",
+    "synthesize": "2026-06-12T19:24:34.160261+00:00"
+  },
+  "run_id": "aef0a0e0-bcff-4aa0-88bf-7c9f4bb8889f",
+  "runtime_minutes": 3.0,
+  "runtime_seconds": 179.823,
+  "scenario": "$10,000 growth and expansion brief",
+  "started_at": "2026-06-12T19:21:57.992603+00:00"
+}
